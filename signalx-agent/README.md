@@ -1,6 +1,6 @@
 # SignalX Agent 使用说明
 
-输入行业关键词、已有事件或本地证据，输出事件、分类、带来源的时间链及待核实项。DeepSeek 负责分析和串联，`../crawler_tool` 负责采集与监测。适用于不同领域的新闻／行业事件调研，当前通过命令行运行。
+输入行业关键词、已有事件或证据文件，输出事件、分类、带来源的时间链及待核实项。DeepSeek 负责分析和串联，`../crawler_tool` 负责采集与监测。适用于不同领域的新闻／行业事件调研，当前通过命令行运行。
 
 第一次调研新主题：完成第 1、2 节，运行后先看输出目录中的 `timeline.md`。本文的“目标行业”“目标公司”“目标产品”均须替换；`my-topic` 是自定主题目录名。
 
@@ -17,12 +17,12 @@
 保留两个同级目录：
 
 ```text
-code/
+仓库根目录/
   signalx-agent/  ← 以下命令均在这里执行
   crawler_tool/  ← 采集与监测依赖
 ```
 
-使用 Python 3.11+，本机验证版本为 3.12。在 `code/signalx-agent` 打开终端：
+使用 Python 3.11+。从仓库根目录进入 `signalx-agent` 后执行：
 
 ```bash
 python3 -m venv .venv
@@ -46,7 +46,7 @@ DEEPSEEK_API_KEY=
 python -m crawler_tool.interfaces.app --serve
 ```
 
-分析命令在终端二执行。服务默认地址为 `http://127.0.0.1:8301`；连接其他已部署服务时，在分析命令中加 `--base-url "服务地址"`。本地证据分析和离线演示不需要采集服务。
+分析命令在终端二执行。服务默认地址为 `http://127.0.0.1:8301`；连接其他已部署服务时，在分析命令中加 `--base-url "服务地址"`。证据文件分析和离线演示不需要采集服务。
 
 ## 2. 换一个主题调研
 
@@ -141,7 +141,7 @@ python -m agent.crawler_cli discover --live --industry "目标行业" --seed inp
 python -m agent.discovery_demo inputs/my-topic/evidence.json --live --industry "目标行业" --max-rounds 10 --max-tool-calls 10 --max-llm-calls 24 --output-dir runs/my-topic-local-001
 ```
 
-只读文件、不补爬网页，但会调用真实 DeepSeek。数组每 100 条划成一批，默认最多 10 轮／10 次本地批次读取；模型新提出、文件中没有的查询返回空。除最终结果和时间链，还保存 `round-001.json` 等各轮快照。
+只读文件、不补爬网页，但会调用真实 DeepSeek。数组每 100 条划成一批，默认最多 10 轮／10 次文件批次读取；模型新提出、文件中没有的查询返回空。除最终结果和时间链，还保存 `round-001.json` 等各轮快照。
 
 ## 5. 单次监测并触发分析
 
@@ -171,9 +171,9 @@ python -m agent.crawler_cli monitor --live --industry "目标行业" --config-di
 
 ## 6. 结果在哪里、怎么看
 
-所有相对路径以运行命令时的当前目录为准；按本文操作，均在 `code/signalx-agent/` 下。终端只打印摘要，发现入口的 `outputDirectory` 给出绝对路径。打开该文件夹即可拿到结果，无需到网页下载。
+所有相对路径以运行命令时的当前目录为准；按本文操作，均在仓库根目录的 `signalx-agent/` 下。终端只打印摘要，发现入口的 `outputDirectory` 给出绝对路径。打开该文件夹即可拿到结果，无需到网页下载。
 
-### 关键词、种子和本地证据
+### 关键词、种子和证据文件
 
 文件都在各自的 `--output-dir`。以第 2 节为例：
 
@@ -225,7 +225,7 @@ python -m agent.timeline runs/my-topic-001/result.json --output runs/my-topic-00
 | `FileExistsError` | 输出目录或导出文件已存在；换新名字，保留旧结果 |
 | 启动失败／没有结果文件 | 检查当前目录、虚拟环境、输入 JSON、密钥、服务地址；启动前报错可能尚未落盘 |
 
-- `discover` 和本地证据入口仅 `COMPLETED` 返回退出码 0，其他状态返回 2；非零不等于没有可用文件。`monitor` 返回 0 也可能只是未触发，`dispatched` 仅表示派发，完成情况看结果文件。
+- `discover` 和证据文件入口仅 `COMPLETED` 返回退出码 0，其他状态返回 2；非零不等于没有可用文件。`monitor` 返回 0 也可能只是未触发，`dispatched` 仅表示派发，完成情况看结果文件。
 - 日期保留原文精度：`eventDate` 为年／月／日，`eventTime` 为带时区精确时刻并转 UTC。不补月初或零点；先后不等于因果，`needs_review` 关系需人工复核。
 - 摘要不等于全文，检查 `hasFullContent`、`sourceName`、`qualityWarnings`。模型置信度和引用校验不代替事实核查，来源覆盖与全文获取由爬虫能力决定。
 - 工作流返回后才落盘，强行终止可能丢失本次进度；不支持自动断点恢复，失败派发不自动重试。
@@ -245,6 +245,4 @@ python -m unittest discover -s tests -q
 
 只需单事件竞品分析时可用 `python -m agent.demo inputs/my-topic/seed.json --output runs/competitor-001.json`。它直接调用真实模型，没有 `--live` 开关、不共享发现预算，也不生成时间链；父目录须已存在，输出文件会覆盖同名文件。不指定 `--output` 时完整 JSON 打印到终端。
 
-代码与接口见 [工作流](docs/WORKFLOW.md)，历史验收见 [使用报告](docs/使用报告.md)。运行产物仅保存在本地，不上传 GitHub；仓库保留测试代码和固定样例。
-
-本地历史文件：`runs/repaired-20260911-222601/timeline.md` 为真实数据离线修复示例，尚未新一轮联网验收；`runs/live-rerun-20260911-220446/raw_output.json` 保留原失败状态及调用记录。
+代码与接口见 [工作流](docs/WORKFLOW.md)，历史验收见 [使用报告](docs/使用报告.md)。仓库保留测试代码和固定样例，运行产物不纳入版本控制；各次结果从指定输出目录获取。
