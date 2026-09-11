@@ -1,0 +1,111 @@
+# 监测日报 2026-09-07
+
+- 告警：21 条（待判读 15）
+- 观察箱新增：210 条
+- 累计 tick：14
+- agent 触发：0 次
+
+## 告警
+
+- **[pending|yellow] competitor_launch score=1.6** 主体=小米科技 平台=south_weekend
+  - 小米携手Gran Turismo发布中国首款VGT概念超级跑车
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”
+- **[pending|yellow] competitor_launch score=1.6** 主体=小米科技 平台=toutiao
+  - 6. 18小米 年中大促
+  - 理由：规则[竞品发布]，主体“小米”，动作“发售”
+- **[pending|yellow] competitor_launch score=1.6** 主体=小米科技 平台=toutiao
+  - 72小时三场发布会: 华为 、苹果、 小米 的折叠屏有何不同?
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”，宾语“小米”
+- **[pending|yellow] competitor_launch score=1.6** 主体=小米科技 平台=toutiao
+  - 一天三旗舰! 华为 、 小米 、vivo同一天发布新手机，谁会是赢家?
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”，宾语“手机”
+- **[pending|yellow] public_opinion score=1.5** 主体=华为技术 平台=sogou_wechat
+  - 华为 Mate90 系列曝光,五大黑科技爆料,年度真香机没跑了
+  - 理由：规则[舆情风险]，主体“华为”，动作“曝光”
+- **[pending|yellow] competitor_launch score=1.385** 主体=小米科技 平台=toutiao
+  - 恐怖如斯，20.99万元的澎程N70 Pro、10999元起的 小米18 Fold发布
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”
+- **[pending|yellow] competitor_launch score=1.28** 主体=小米科技 平台=weibo
+  - 【20.99万元起，小米澎程四款新车齐发“中折叠”旗舰小米18 Fold同时发布】9月7日，小米秋季旗舰新品发布会在北京举办，雷军正式发布小米澎程N70 Pro
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”
+- **[pending|yellow] competitor_launch score=1.28** 主体=小米科技 平台=weibo
+  - #陈年说直播间蹭雷军流量比较现实# 【 #陈年回应没去小米发布会# 】9月7日，陈年更新视频回应没去小米发布会：“其实昨天我本来就想去，但是我想还是坚持在我的直
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”
+- **[pending|yellow] self_launch score=1.2** 主体=华为技术 平台=toutiao
+  - 麒麟9050Pro! 华为MateXT2 发布 19999起 | OPPOFindX10系列官宣
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+- **[pending|yellow] self_launch score=1.2** 主体=华为技术 平台=toutiao
+  - 时隔六年 华为 发布高性能芯片:“韬定律”成果落地
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”，宾语“芯片”
+- **[pending|yellow] self_launch score=1.2** 主体=华为技术 平台=south_weekend
+  - 华为Ultimate 2手表新色发布，首发滑雪登山模式惊艳亮相
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+- **[accepted|yellow] self_launch score=1.185** 主体=华为技术 平台=south_weekend
+  - 华为WATCH GT 7系列正式发布，老用户能闭眼入的经典之作
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+  - 标注：WATCH GT7发布相关报道
+- **[accepted|yellow] self_launch score=1.185** 主体=华为技术 平台=south_weekend
+  - 华为FreeClip 2 典藏版 耳夹耳机新品发布，美学与科技的双向突破！
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+  - 标注：FreeClip2新品发布
+- **[accepted|yellow] self_launch score=1.185** 主体=华为技术 平台=toutiao
+  - 华为Mate XT2 非凡大师发布:三折叠再进化，玄武架构加持IP58级防护
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+  - 标注：MateXT2发布报道
+- **[rejected|yellow] self_launch score=1.185** 主体=华为技术 平台=toutiao
+  - 华为Mate XT2 价格一览 灵犀防窥屏版定价24999元
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”，宾语“旗舰”
+  - 标注：价格汇总非发布
+- **[rejected|yellow] self_launch score=1.185** 主体=华为技术 平台=toutiao
+  - 华为Mate XT2 非凡大师正式发布:展翼三折叠，3.5mm机身容纳双屏
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+  - 标注：与003同事件重复
+- **[rejected|yellow] self_launch score=1.185** 主体=华为技术 平台=toutiao
+  - 华为Mate XT2 首发上手:三折叠展开翅膀，从奇观走进日常
+  - 理由：规则[我方发布]，主体“华为”，动作“首发”
+  - 标注：评测用语误命中
+- **[pending|yellow] self_launch score=1.016** 主体=华为技术 平台=toutiao
+  - 19999元起! 华为 发布最新款三折叠手机
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”，宾语“手机”
+- **[pending|yellow] competitor_launch score=0.634** 主体=小米科技 平台=sogou_wechat
+  - 华为、小米同日发布 折叠屏 手机 :华为Mate XT 2 非凡大师19999元起,最高24999元;小米18 Fold 定价10999元起,最高14999元
+  - 理由：规则[竞品发布]，主体“小米”，动作“发布”，宾语“折叠屏”
+- **[pending|yellow] self_launch score=0.594** 主体=华为技术 平台=sogou_wechat
+  - 华为 再次发布高性能芯片
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”，宾语“芯片”
+- **[pending|yellow] self_launch score=0.594** 主体=华为技术 平台=sogou_wechat
+  - 华为 最新发布会,新三折叠等多款产品又遥遥领先?
+  - 理由：规则[我方发布]，主体“华为”，动作“发布”
+
+## 观察箱新增
+
+- [triage_unavailable_or_non_event] 华为 芯片别只看热血（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 分享 | 华为 官网- 华为 智能手机（toutiao）
+- [triage_unavailable_or_non_event] 关于 华为 - 华为（toutiao）
+- [triage_unavailable_or_non_event] 从商务通勤到身心守护：华为WATCH 6系列值得职场人士入手（south_weekend）
+- [triage_unavailable_or_non_event] 从商务通勤到身心守护：华为WATCH 6系列值得职场人士入手（south_weekend）
+- [triage_unavailable_or_non_event] 从百亿赠书到百城共读：华为阅读把数字阅读变成城市文化基础设施（south_weekend）
+- [triage_unavailable_or_non_event] FUV赛道有了“首个”定义者：岚图追光S全系标配华为乾崑ADS 5与四颗激光雷达（south_weekend）
+- [triage_unavailable_or_non_event] 16.58万起即享满配华为乾崑六件套！东风奕派M8正式上市，开启智能普惠新时代（south_weekend）
+- [triage_unavailable_or_non_event] 华为乾崑携手猛士共同打造智能越野标杆，全新猛士M817开启智能越野新时代（south_weekend）
+- [triage_unavailable_or_non_event] 南有梅雨北有高温，华为天气有「天气地图」让出门不再「凭运气」（south_weekend）
+- [triage_unavailable_or_non_event] 华为 - 构建万物互联的智能世界（toutiao）
+- [triage_unavailable_or_non_event] 华为 商城（toutiao）
+- [triage_unavailable_or_non_event] 两万块的 华为Mate XT2 ，到底值不值?我给你掏心窝子算笔账（toutiao）
+- [triage_unavailable_or_non_event] 19999元起! 华为Mate XT2 直接封神，这才是国产旗舰天花板（toutiao）
+- [triage_unavailable_or_non_event] 华为Mate XT2 三折叠开箱首曝 展翼折叠屏体验全面升级（toutiao）
+- [triage_unavailable_or_non_event] 麒麟芯时隔六年回归! 华为Mate XT2 上手，三折叠这次真香了（toutiao）
+- [triage_unavailable_or_non_event] 华为Mate XT2 三折叠开箱首曝 展翼折叠屏体验全面升级（toutiao）
+- [triage_unavailable_or_non_event] 华为 新机登场:9月9日,开始销售!（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 这款高端手机销量依旧稳,首发4699元,如今3799元起（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 这波放大招,颠覆行业? 华为 推出最新鸿蒙7（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 三折叠的二代出来了,二手 华为 初代三折叠都跌成啥样了（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 MateXT2 炸场 19999 元起!三折叠全维焕新,升级到底值不值?（sogou_wechat）
+- [triage_unavailable_or_non_event] 华为 智慧屏（toutiao）
+- [triage_unavailable_or_non_event] 关于 华为 - 华为（toutiao）
+- [triage_unavailable_or_non_event] 超可靠三折叠玄武架构强力支撑， 华为 Mate XT2 非凡大师可靠性全面进阶（toutiao）
+- [triage_unavailable_or_non_event] 小米 商城- 小米 官方网站， 小米手机 、红米手机正品专卖（toutiao）
+- [triage_unavailable_or_non_event] 小米 商城- 小米 官方网站， 小米手机 、红米手机正品专卖（toutiao）
+- [triage_unavailable_or_non_event] 小米 商城- 小米 官方网站， 小米手机 、红米手机正品专卖（toutiao）
+- [triage_unavailable_or_non_event] 小米 商城- 小米 官方网站， 小米手机 、红米手机正品专卖（toutiao）
+- [triage_unavailable_or_non_event] 小米 商城- 小米 官方网站， 小米手机 、红米手机正品专卖（toutiao）

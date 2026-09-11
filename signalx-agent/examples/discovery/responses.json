@@ -1,0 +1,56 @@
+[
+  {
+    "stage": "extraction",
+    "response": {"events": [
+      {
+        "title": "甲公司发布客服产品 A",
+        "summary": "甲公司发布支持自动分配工单的客服产品 A。",
+        "eventTime": "2026-09-01T09:00:00+08:00",
+        "entities": ["甲公司", "客服产品 A"],
+        "evidenceIds": ["evd_demo_1"],
+        "anchor": {"evidenceId": "evd_demo_1", "quote": "甲公司发布客服产品 A"},
+        "matchedEventId": null
+      }
+    ]}
+  },
+  {
+    "stage": "classification",
+    "response": {"classifications": [
+      {"eventId": "evt_d9f1e06973419c6a3060", "category": "PRODUCT_LAUNCH", "labels": ["智能客服"], "confidence": 0.9}
+    ]}
+  },
+  {
+    "stage": "extraction",
+    "response": {"events": [
+      {
+        "title": "客服产品 A 上线，甲公司补充功能说明",
+        "summary": "两份证据指向同一次客服产品 A 发布，产品支持自动分配工单。",
+        "eventTime": "2026-09-01T01:00:00Z",
+        "entities": ["甲公司", "客服产品 A"],
+        "evidenceIds": ["evd_demo_2"],
+        "anchor": {"evidenceId": "evd_demo_2", "quote": "客服产品 A 上线，甲公司补充功能说明"},
+        "matchedEventId": "evt_d9f1e06973419c6a3060"
+      },
+      {
+        "title": "甲公司发布客服产品 B",
+        "summary": "甲公司发布提供知识库检索功能的客服产品 B。",
+        "eventTime": "2026-09-01T02:00:00Z",
+        "entities": ["甲公司", "客服产品 B"],
+        "evidenceIds": ["evd_demo_3"],
+        "anchor": {"evidenceId": "evd_demo_3", "quote": "甲公司发布客服产品 B"},
+        "matchedEventId": null
+      }
+    ]}
+  },
+  {
+    "stage": "classification",
+    "response": {"classifications": [
+      {"eventId": "evt_d9f1e06973419c6a3060", "category": "PRODUCT_LAUNCH", "labels": ["智能客服"], "confidence": 0.95},
+      {"eventId": "evt_e02f32361c05df28e79c", "category": "PRODUCT_LAUNCH", "labels": ["知识库检索"], "confidence": 0.9}
+    ]}
+  },
+  {
+    "stage": "planning",
+    "response": {"shouldContinue": false, "queries": [], "reason": "本地示例的两个发布事件和补充证据已经处理完成。"}
+  }
+]

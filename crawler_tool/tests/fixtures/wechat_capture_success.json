@@ -1,0 +1,23 @@
+{
+  "base_resp": {"ret": 0, "errmsg": "ok"},
+  "app_msg_list": [
+    {
+      "aid": "2652200000_1",
+      "appmsgid": 2652200000,
+      "title": "示例公众号文章：人工智能动态",
+      "digest": "一篇用于解析器测试的示例摘要",
+      "link": "https://mp.weixin.qq.com/s?__biz=MzA0demo0000&mid=2652200000&idx=1&sn=demosn001&chksm=demochksm",
+      "author": "示例作者",
+      "create_time": 1724068800
+    },
+    {
+      "aid": "2652200000_2",
+      "appmsgid": 2652200000,
+      "title": "第二篇示例文章",
+      "digest": "",
+      "link": "https://mp.weixin.qq.com/s?__biz=MzA0demo0000&mid=2652200001&idx=1&sn=demosn002&chksm=demochksm",
+      "author": "",
+      "create_time": 1723982400
+    }
+  ]
+}

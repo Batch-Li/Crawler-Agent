@@ -1,0 +1,146 @@
+"""从新证据抽取事件，并与已确认事件匹配；身份不依赖生成标题。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from pydantic import ValidationError
+
+from ..llm import StructuredLLM, generate_json, validation_feedback
+from ..models import Event, Evidence
+from ..prompts import EVENT_EXTRACTION_SYSTEM_PROMPT
+from ..tool_models import EventDraft, EventDraftBatch, EventExtractionRequest, EventExtractionResult
+
+
+class EventExtractionToolError(RuntimeError):
+    """事件抽取在限定重试次数内未能得到合法结果。"""
+
+
+class EventExtractionTool:
+    name = "event_extraction"
+    description = "抽取新证据中的事件，匹配已有事件并保留其 ID。"
+    input_model = EventExtractionRequest
+    output_model = EventExtractionResult
+
+    def __init__(self, llm: StructuredLLM, max_attempts: int = 2,
+                 max_evidence_per_call: int = 40) -> None:
+        if max_attempts < 1 or max_evidence_per_call < 1:
+            raise ValueError("max_attempts 和 max_evidence_per_call 必须大于等于 1")
+        self.llm = llm
+        self.max_attempts = max_attempts
+        self.max_evidence_per_call = max_evidence_per_call
+
+    def invoke(self, request: EventExtractionRequest | dict[str, Any]) -> EventExtractionResult:
+        normalized = EventExtractionRequest.model_validate(request)
+        events = {event.event_id: event for event in normalized.existing_events}
+        for start in range(0, len(normalized.evidence), self.max_evidence_per_call):
+            chunk = normalized.evidence[start:start + self.max_evidence_per_call]
+            updates = self._extract_chunk(chunk, normalized.industry, list(events.values()))
+            events.update({event.event_id: event for event in updates})
+        return EventExtractionResult(events=list(events.values()))
+
+    def _extract_chunk(self, evidence: list[Evidence], industry: str | None,
+                       existing: list[Event]) -> list[Event]:
+        context = {
+            "industry": industry,
+            "evidence": [item.model_dump(by_alias=True, mode="json") for item in evidence],
+            "existingEvents": [
+                {
+                    "eventId": event.event_id,
+                    "title": event.title,
+                    "summary": event.summary,
+                    "entities": event.entities,
+                    "eventTime": event.event_time.isoformat() if event.event_time else None,
+                    "evidenceIds": [item.evidence_id for item in event.evidence],
+                    "anchor": event.anchor.model_dump(by_alias=True) if event.anchor else None,
+                }
+                for event in existing
+            ],
+        }
+        schema = EventDraftBatch.model_json_schema(by_alias=True)
+        feedback = None
+        last_error = None
+        evidence_by_id = {item.evidence_id: item for item in evidence}
+        existing_ids = {event.event_id for event in existing}
+        for _ in range(self.max_attempts):
+            parts = [
+                "请从新 Evidence 抽取事件，并与 existingEvents 匹配。",
+                "输出 JSON Schema：\n" + json.dumps(schema, ensure_ascii=False),
+                "输入：\n" + json.dumps(context, ensure_ascii=False),
+            ]
+            if feedback:
+                parts.append("上一次输出校验失败，请修正：\n" + feedback)
+            try:
+                batch = EventDraftBatch.model_validate(generate_json(
+                    self.llm, EVENT_EXTRACTION_SYSTEM_PROMPT, "\n\n".join(parts),
+                ))
+                for draft in batch.events:
+                    unknown = set(draft.evidence_ids) - evidence_by_id.keys()
+                    if unknown:
+                        raise ValueError("事件引用了不存在的 evidenceId: " + ", ".join(sorted(unknown)))
+                    if draft.matched_event_id and draft.matched_event_id not in existing_ids:
+                        raise ValueError("matchedEventId 必须来自 existingEvents")
+                    source = evidence_by_id[draft.anchor.evidence_id]
+                    quote = _normalize_text(draft.anchor.quote)
+                    if not any(quote in _normalize_text(text) for text in (source.title, source.content, source.snippet) if text):
+                        raise ValueError("anchor.quote 必须是引用证据中真实存在的原文片段")
+                # Event 构建也在重试范围内，不让草稿到正式对象的校验绕过重试。
+                return self._materialize_events(batch.events, evidence_by_id, existing)
+            except (ValidationError, ValueError, TypeError) as exc:
+                last_error = exc
+                feedback = validation_feedback(exc)
+        raise EventExtractionToolError(
+            f"事件抽取在 {self.max_attempts} 次尝试后仍未通过校验"
+        ) from last_error
+
+    @classmethod
+    def _materialize_events(cls, drafts: list[EventDraft],
+                            evidence_by_id: dict[str, Evidence],
+                            existing: list[Event]) -> list[Event]:
+        events = {event.event_id: event for event in existing}
+        changed: dict[str, Event] = {}
+        for draft in drafts:
+            event_id = draft.matched_event_id or cls._event_id(draft)
+            if event_id not in events and not draft.matched_event_id:
+                # 已有 anchor 可反查旧 ID；无 anchor 的旧数据才使用保守匹配。
+                candidates = [
+                    event for event in events.values()
+                    if (event.anchor and event.anchor.evidence_id == draft.anchor.evidence_id
+                        and _normalize_text(event.anchor.quote) == _normalize_text(draft.anchor.quote))
+                    or (event.anchor is None
+                        and _normalize_text(event.title) == _normalize_text(draft.title)
+                        and set(draft.evidence_ids).intersection(item.evidence_id for item in event.evidence)
+                        and (not event.entities or not draft.entities or event.entities[0] == draft.entities[0])
+                        and (event.event_time is None or draft.event_time is None or event.event_time == draft.event_time))
+                ]
+                if len(candidates) == 1:
+                    event_id = candidates[0].event_id
+            old = events.get(event_id)
+            linked = {item.evidence_id: item for item in old.evidence} if old else {}
+            linked.update({key: evidence_by_id[key] for key in draft.evidence_ids})
+            entities = list(dict.fromkeys([*(old.entities if old else []), *draft.entities]))
+            event = Event(
+                event_id=event_id,
+                title=draft.title,
+                summary=draft.summary if draft.summary is not None else (old.summary if old else None),
+                event_time=draft.event_time or (old.event_time if old else None),
+                entities=entities,
+                evidence=list(linked.values()),
+                anchor=old.anchor if old and old.anchor else draft.anchor,
+                event_types=old.event_types if old else [],
+                alert_meta=old.alert_meta if old else None,
+            )
+            events[event_id] = changed[event_id] = event
+        return list(changed.values())
+
+    @staticmethod
+    def _event_id(draft: EventDraft) -> str:
+        # 同一证据片段换标题/补时间不会换 ID；跨来源匹配使用 matchedEventId。
+        signature = json.dumps([draft.anchor.evidence_id, _normalize_text(draft.anchor.quote)], ensure_ascii=False)
+        return "evt_" + hashlib.sha256(signature.encode("utf-8")).hexdigest()[:20]
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.split())

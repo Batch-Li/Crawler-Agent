@@ -1,0 +1,35 @@
+{
+  "entities": [
+    {
+      "entityId": "ent_self",
+      "canonicalName": "华为技术",
+      "type": "self",
+      "aliases": ["华为", "Huawei"],
+      "products": [
+        {"name": "HUAWEI Mate XT2", "aliases": ["华为 Mate XT2"]}
+      ],
+      "confusableBlocklist": [],
+      "enabled": true
+    },
+    {
+      "entityId": "ent_comp_001",
+      "canonicalName": "小米科技",
+      "type": "competitor",
+      "aliases": ["小米", "xiaomi", "Xiaomi"],
+      "products": [
+        {"name": "小米18", "aliases": ["xiaomi 18", "小米 18"]}
+      ],
+      "confusableBlocklist": [],
+      "enabled": true
+    },
+    {
+      "entityId": "ent_regulator",
+      "canonicalName": "工信部",
+      "type": "regulator",
+      "aliases": ["工业和信息化部", "网信办", "市场监管总局"],
+      "products": [],
+      "confusableBlocklist": [],
+      "enabled": true
+    }
+  ]
+}

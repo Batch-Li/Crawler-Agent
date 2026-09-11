@@ -1,0 +1,44 @@
+{
+  "entities": [
+    {
+      "entityId": "ent_self_demo",
+      "canonicalName": "小信智能",
+      "type": "self",
+      "aliases": ["小信"],
+      "products": [
+        {"name": "小信客服", "aliases": ["小信机器人"]}
+      ],
+      "confusableBlocklist": [],
+      "enabled": true
+    },
+    {
+      "entityId": "ent_zhiyan",
+      "canonicalName": "智言科技",
+      "type": "competitor",
+      "aliases": ["智言", "ZY科技", "Zhiyan"],
+      "products": [
+        {"name": "小智客服", "aliases": ["小智"]}
+      ],
+      "confusableBlocklist": ["智言教育"],
+      "enabled": true
+    },
+    {
+      "entityId": "ent_kuaida",
+      "canonicalName": "快答云",
+      "type": "competitor",
+      "aliases": ["快答"],
+      "products": [],
+      "confusableBlocklist": [],
+      "enabled": true
+    },
+    {
+      "entityId": "ent_miac",
+      "canonicalName": "工信部",
+      "type": "regulator",
+      "aliases": ["工业和信息化部", "网信办", "国家网信办", "市场监管总局"],
+      "products": [],
+      "confusableBlocklist": [],
+      "enabled": true
+    }
+  ]
+}

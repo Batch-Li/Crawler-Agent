@@ -1,0 +1,7 @@
+{
+  "annotationSource": "synthetic_fixture_for_pipeline_verification_not_model_quality",
+  "events": [
+    {"evidenceIds": ["evd_demo_1", "evd_demo_2"], "category": "PRODUCT_LAUNCH"},
+    {"evidenceIds": ["evd_demo_3"], "category": "PRODUCT_LAUNCH"}
+  ]
+}

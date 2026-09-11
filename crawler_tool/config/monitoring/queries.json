@@ -1,0 +1,19 @@
+{
+  "queriesPerTick": 2,
+  "platforms": [
+    "south_weekend",
+    "toutiao",
+    "cctv_news",
+    "weibo",
+    "sogou_wechat"
+  ],
+  "includeCaptured": true,
+  "queries": [
+    "华为",
+    "华为 Mate XT2",
+    "小米",
+    "小米18",
+    "折叠屏 手机",
+    "华为 小米"
+  ]
+}

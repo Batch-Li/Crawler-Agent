@@ -1,0 +1,25 @@
+{
+  "code": 200,
+  "data": [
+    {
+      "type": "aweme",
+      "aweme_info": {
+        "aweme_id": "7300000000000000001",
+        "desc": "人工智能日常应用示例",
+        "create_time": 1724068800,
+        "author": {"nickname": "示例创作者", "sec_uid": "MS4wLjABAAAAexample"},
+        "statistics": {
+          "digg_count": 123,
+          "comment_count": 45,
+          "share_count": 6,
+          "collect_count": 78,
+          "play_count": 9001
+        },
+        "video": {
+          "play_addr": {"url_list": ["https://www.douyin.com/aweme/v1/play/?video_id=demo"], "uri": "demo"}
+        }
+      }
+    },
+    {"type": "none", "aweme_info": null}
+  ]
+}

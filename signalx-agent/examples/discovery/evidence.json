@@ -1,0 +1,36 @@
+{
+  "industry": "智能客服（虚构演示数据）",
+  "batches": [
+    {
+      "query": "甲公司 客服产品 A",
+      "evidence": [
+        {
+          "evidenceId": "evd_demo_1",
+          "title": "甲公司发布客服产品 A",
+          "content": "2026年9月1日北京时间9点，甲公司发布客服产品 A，支持自动分配工单。",
+          "source": "虚构官方公告",
+          "publishedAt": "2026-09-01T09:00:00+08:00"
+        }
+      ]
+    },
+    {
+      "query": "甲公司 客服新品补充报道",
+      "evidence": [
+        {
+          "evidenceId": "evd_demo_2",
+          "title": "客服产品 A 上线，甲公司补充功能说明",
+          "content": "甲公司确认客服产品 A 于9月1日北京时间9点发布，支持自动分配工单。这是同一发布事件的补充报道。",
+          "source": "虚构媒体报道",
+          "publishedAt": "2026-09-01T01:30:00Z"
+        },
+        {
+          "evidenceId": "evd_demo_3",
+          "title": "甲公司发布客服产品 B",
+          "content": "2026年9月1日UTC时间2点，甲公司发布客服产品 B，提供知识库检索功能。",
+          "source": "虚构官方公告",
+          "publishedAt": "2026-09-01T02:00:00Z"
+        }
+      ]
+    }
+  ]
+}

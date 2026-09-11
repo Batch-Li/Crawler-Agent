@@ -1,0 +1,18 @@
+{
+  "eventId": "evt_demo_001",
+  "title": "云智科技发布面向中小企业的 AI 客服产品",
+  "summary": "云智科技宣布推出新的 AI 客服产品。",
+  "eventTime": "2026-08-24T10:00:00+08:00",
+  "eventTypes": ["PRODUCT_LAUNCH"],
+  "entities": ["云智科技", "云智 AI 客服"],
+  "evidence": [
+    {
+      "evidenceId": "evd_demo_001",
+      "title": "云智科技发布 AI 客服产品",
+      "content": "云智科技宣布推出云智 AI 客服，面向中小企业，提供多轮对话和企业知识库问答能力。官方暂未公布价格。",
+      "source": "云智科技官网",
+      "url": "https://example.com/company/product-launch",
+      "publishedAt": "2026-08-24T09:30:00+08:00"
+    }
+  ]
+}

@@ -1,0 +1,695 @@
+===== tick started 2026/09/07 周一 20:25:38.51 ===== 
+{
+  "generatedAt": "2026-09-07T12:25:39.889019+00:00",
+  "queriesRun": [
+    "折叠屏 手机",
+    "华为 小米"
+  ],
+  "requestBudget": 4,
+  "queryReports": [
+    {
+      "query": "折叠屏 手机",
+      "itemCount": 8,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为 小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 18,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T12:25:39.889019+00:00",
+    "processed": 18,
+    "routes": {
+      "dropped_noMatch": 6,
+      "industry": 2,
+      "dropped_stale": 8,
+      "slow": 2
+    },
+    "suppressed": {
+      "cooldown": 0,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 4,
+    "degradedTriage": true,
+    "tickCount": 5,
+    "alertsWritten": 0,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 20:59:01.45 ===== 
+{
+  "generatedAt": "2026-09-07T12:59:02.808591+00:00",
+  "queriesRun": [
+    "华为 小米",
+    "华为"
+  ],
+  "requestBudget": 4,
+  "queryReports": [
+    {
+      "query": "华为 小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 20,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T12:59:02.808591+00:00",
+    "processed": 20,
+    "routes": {
+      "dropped_stale": 8,
+      "slow": 10,
+      "fast": 2
+    },
+    "suppressed": {
+      "cooldown": 2,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 10,
+    "degradedTriage": true,
+    "tickCount": 6,
+    "alertsWritten": 0,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 22:00:07.43 ===== 
+{
+  "generatedAt": "2026-09-07T14:00:08.786919+00:00",
+  "queriesRun": [
+    "华为",
+    "华为 Mate XT2"
+  ],
+  "requestBudget": 4,
+  "queryReports": [
+    {
+      "query": "华为",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为 Mate XT2",
+      "itemCount": 9,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 19,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T14:00:08.786919+00:00",
+    "processed": 19,
+    "routes": {
+      "slow": 13,
+      "fast": 6
+    },
+    "suppressed": {
+      "cooldown": 5,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 13,
+    "degradedTriage": true,
+    "tickCount": 7,
+    "alertsWritten": 1,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 22:29:01.22 ===== 
+{
+  "generatedAt": "2026-09-07T14:29:01.560693+00:00",
+  "queriesRun": [
+    "华为 Mate XT2",
+    "小米"
+  ],
+  "requestBudget": 4,
+  "queryReports": [
+    {
+      "query": "华为 Mate XT2",
+      "itemCount": 9,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 19,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T14:29:01.560693+00:00",
+    "processed": 19,
+    "routes": {
+      "fast": 4,
+      "slow": 7,
+      "dropped_stale": 8
+    },
+    "suppressed": {
+      "cooldown": 2,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 7,
+    "degradedTriage": true,
+    "tickCount": 8,
+    "alertsWritten": 1,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 22:59:07.48 ===== 
+{
+  "generatedAt": "2026-09-07T14:59:11.191653+00:00",
+  "queriesRun": [
+    "小米",
+    "小米18"
+  ],
+  "requestBudget": 10,
+  "queryReports": [
+    {
+      "query": "小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "success"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "source_unavailable"
+        }
+      ]
+    },
+    {
+      "query": "小米18",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "success"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "source_unavailable"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 120,
+  "capturedItems": 100,
+  "capturedError": null,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T14:59:11.191653+00:00",
+    "processed": 120,
+    "routes": {
+      "dropped_stale": 25,
+      "fast": 16,
+      "slow": 71,
+      "industry": 2,
+      "dropped_noMatch": 6
+    },
+    "suppressed": {
+      "cooldown": 5,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 73,
+    "degradedTriage": true,
+    "tickCount": 9,
+    "alertsWritten": 6,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 23:29:01.85 ===== 
+{
+  "generatedAt": "2026-09-07T15:29:02.731713+00:00",
+  "queriesRun": [
+    "折叠屏 手机",
+    "华为 小米"
+  ],
+  "requestBudget": 10,
+  "queryReports": [
+    {
+      "query": "折叠屏 手机",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为 小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 56,
+  "capturedItems": 36,
+  "capturedError": null,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T15:29:02.731713+00:00",
+    "processed": 56,
+    "routes": {
+      "dropped_noMatch": 6,
+      "industry": 2,
+      "dropped_stale": 41,
+      "fast": 2,
+      "slow": 5
+    },
+    "suppressed": {
+      "cooldown": 1,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 7,
+    "degradedTriage": true,
+    "tickCount": 11,
+    "alertsWritten": 0,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/07 周一 23:59:07.69 ===== 
+{
+  "generatedAt": "2026-09-07T15:59:10.215234+00:00",
+  "queriesRun": [
+    "华为 小米",
+    "华为"
+  ],
+  "requestBudget": 10,
+  "queryReports": [
+    {
+      "query": "华为 小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 67,
+  "capturedItems": 47,
+  "capturedError": null,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T15:59:10.215234+00:00",
+    "processed": 67,
+    "routes": {
+      "dropped_stale": 49,
+      "slow": 15,
+      "fast": 3
+    },
+    "suppressed": {
+      "cooldown": 1,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 15,
+    "degradedTriage": true,
+    "tickCount": 12,
+    "alertsWritten": 1,
+    "skippedInvalid": 0
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/08 周二  0:29:02.45 ===== 
+{
+  "generatedAt": "2026-09-07T16:29:05.024534+00:00",
+  "queriesRun": [
+    "华为",
+    "华为 Mate XT2"
+  ],
+  "requestBudget": 10,
+  "queryReports": [
+    {
+      "query": "华为",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "华为 Mate XT2",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 75,
+  "capturedItems": 55,
+  "capturedError": null,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T16:29:05.024534+00:00",
+    "processed": 75,
+    "routes": {
+      "fast": 9,
+      "slow": 20,
+      "dropped_stale": 46
+    },
+    "suppressed": {
+      "cooldown": 3,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 20,
+    "degradedTriage": true,
+    "tickCount": 13,
+    "alertsWritten": 4,
+    "skippedInvalid": 0
+  },
+  "agentTrigger": {
+    "due": 0,
+    "dispatched": 0,
+    "skippedReason": null
+  }
+}
+===== tick finished, exit=0 ===== 
+===== tick started 2026/09/08 周二  0:59:01.37 ===== 
+{
+  "generatedAt": "2026-09-07T16:59:02.309972+00:00",
+  "queriesRun": [
+    "华为 Mate XT2",
+    "小米"
+  ],
+  "requestBudget": 10,
+  "queryReports": [
+    {
+      "query": "华为 Mate XT2",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "empty"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "query": "小米",
+      "itemCount": 10,
+      "sourceReports": [
+        {
+          "platform": "south_weekend",
+          "status": "success"
+        },
+        {
+          "platform": "toutiao",
+          "status": "success"
+        },
+        {
+          "platform": "cctv_news",
+          "status": "empty"
+        },
+        {
+          "platform": "weibo",
+          "status": "parser_changed"
+        },
+        {
+          "platform": "sogou_wechat",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  "crawledItems": 84,
+  "capturedItems": 64,
+  "capturedError": null,
+  "crawlArchive": "data\\crawl\\crawl_20260907.jsonl",
+  "monitor": {
+    "generatedAt": "2026-09-07T16:59:02.309972+00:00",
+    "processed": 84,
+    "routes": {
+      "dropped_stale": 53,
+      "slow": 11,
+      "fast": 1,
+      "dropped_noMatch": 19
+    },
+    "suppressed": {
+      "cooldown": 1,
+      "groupWindow": 0,
+      "duplicateTitle": 0
+    },
+    "observationAdded": 6,
+    "degradedTriage": true,
+    "tickCount": 14,
+    "alertsWritten": 0,
+    "skippedInvalid": 0
+  },
+  "agentTrigger": {
+    "due": 5,
+    "dispatched": 0,
+    "skippedReason": "no_runner_configured"
+  },
+  "dailyReport": "data\\reports\\daily_report_2026-09-07.md"
+}
+===== tick finished, exit=0 ===== 

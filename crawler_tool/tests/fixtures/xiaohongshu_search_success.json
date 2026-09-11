@@ -1,0 +1,19 @@
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "model_type": "note",
+        "id": "note-001",
+        "url": "https://www.xiaohongshu.com/explore/note-001",
+        "note_card": {
+          "display_title": "人工智能办公实践",
+          "user": {"nickname": "示例作者"},
+          "interact_info": {"liked_count": "12", "collected_count": "3", "comment_count": "4", "shared_count": "1"},
+          "last_update_time": 1724068800000
+        }
+      },
+      {"model_type": "rec_query", "id": "ignored", "note_card": {"display_title": "人工智能"}}
+    ]
+  }
+}

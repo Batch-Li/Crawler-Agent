@@ -1,0 +1,30 @@
+[project]
+name = "signalx-crawler-tool"
+version = "0.1.0"
+description = "SignalX shared crawler foundation and Agent Tool interfaces"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "httpx>=0.27,<1",
+    "pydantic>=2.7,<3",
+    "uvicorn>=0.30,<1",
+    "lxml>=5,<7",
+    "beautifulsoup4>=4.12,<5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["crawler_tool*"]
+
+[tool.setuptools.package-data]
+"crawler_tool.monitoring" = ["default_config/*.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = ["real_source_validation: explicitly enabled real-network source verification"]
