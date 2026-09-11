@@ -26,15 +26,20 @@ from crawler_tool.monitoring.triage import TriageClient
 def item_to_evidence(item: dict[str, Any]) -> dict[str, Any]:
     """ContentItem 风格字典 → DISCOVERY_WORKFLOW 的 Evidence。"""
     dedup = item.get("dedup") if isinstance(item.get("dedup"), dict) else {}
+    quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+    ext = item.get("ext") if isinstance(item.get("ext"), dict) else {}
     return {
         "evidenceId": str(item.get("contentId") or item.get("dedupKey") or dedup.get("dedupKey") or "").strip(),
         "title": str(item.get("title") or ""),
         "source": str(item.get("platform") or ""),
         "url": item.get("url"),
         "publishedAt": item.get("publishedAt"),
-        "snippet": item.get("summary"),
-        "content": item.get("content"),
+        "snippet": item.get("summary") or (item.get("content") if quality.get("hasFullContent") is False else None),
+        "content": None if quality.get("hasFullContent") is False else item.get("content"),
         "dedupKey": item.get("dedupKey") or dedup.get("dedupKey"),
+        "hasFullContent": quality.get("hasFullContent"),
+        "sourceName": ext.get("sourceName"),
+        "qualityWarnings": quality.get("warnings") or [],
     }
 
 

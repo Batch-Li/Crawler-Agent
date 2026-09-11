@@ -32,25 +32,49 @@
         "matchedEventId": "evt_d9f1e06973419c6a3060"
       },
       {
-        "title": "甲公司发布客服产品 B",
-        "summary": "甲公司发布提供知识库检索功能的客服产品 B。",
-        "eventTime": "2026-09-01T02:00:00Z",
-        "entities": ["甲公司", "客服产品 B"],
+        "title": "甲公司下调客服产品 A 价格",
+        "summary": "甲公司将前一天发布的客服产品 A 月费由100元降至80元。",
+        "eventTime": "2026-09-02T02:00:00Z",
+        "entities": ["甲公司", "客服产品 A"],
         "evidenceIds": ["evd_demo_3"],
-        "anchor": {"evidenceId": "evd_demo_3", "quote": "甲公司发布客服产品 B"},
+        "anchor": {"evidenceId": "evd_demo_3", "quote": "甲公司下调客服产品 A 价格"},
         "matchedEventId": null
       }
     ]}
   },
+  {"stage": "merge", "response": {"groups": []}},
   {
     "stage": "classification",
     "response": {"classifications": [
       {"eventId": "evt_d9f1e06973419c6a3060", "category": "PRODUCT_LAUNCH", "labels": ["智能客服"], "confidence": 0.95},
-      {"eventId": "evt_e02f32361c05df28e79c", "category": "PRODUCT_LAUNCH", "labels": ["知识库检索"], "confidence": 0.9}
+      {"eventId": "evt_e8a124b1514140f7a946", "category": "PRICE_CHANGE", "labels": ["降价"], "confidence": 0.9}
     ]}
   },
   {
+    "stage": "chain",
+    "response": {"chains": [{
+      "title": "客服产品 A 发布后调价",
+      "summary": "甲公司于9月1日发布客服产品 A，次日将月费由100元降至80元。",
+      "eventIds": ["evt_d9f1e06973419c6a3060", "evt_e8a124b1514140f7a946"],
+      "relations": [{
+        "fromEventId": "evt_d9f1e06973419c6a3060",
+        "toEventId": "evt_e8a124b1514140f7a946",
+        "relationType": "FOLLOW_UP",
+        "reason": "调价公告明确指向前一天发布的同一款客服产品 A。",
+        "evidence": [
+          {"evidenceId": "evd_demo_1", "quote": "甲公司发布客服产品 A"},
+          {"evidenceId": "evd_demo_3", "quote": "甲公司将前一天发布的客服产品 A 月费由100元降至80元"}
+        ],
+        "confidence": 0.95,
+        "status": "supported"
+      }],
+      "confidence": 0.95,
+      "unresolvedQuestions": [],
+      "matchedChainId": null
+    }], "unresolvedQuestions": []}
+  },
+  {
     "stage": "planning",
-    "response": {"shouldContinue": false, "queries": [], "reason": "本地示例的两个发布事件和补充证据已经处理完成。"}
+    "response": {"shouldContinue": false, "queries": [], "reason": "本地示例的发布、调价事件及关联已经处理完成。"}
   }
 ]

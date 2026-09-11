@@ -16,10 +16,12 @@ from .prompts import (
     EVENT_CLASSIFICATION_SYSTEM_PROMPT, EVENT_EXTRACTION_SYSTEM_PROMPT,
     QUERY_PLANNER_SYSTEM_PROMPT,
     EVENT_CHAIN_SYSTEM_PROMPT,
+    EVENT_MERGE_SYSTEM_PROMPT,
 )
 from .query_planner import LLMQueryPlanner
 from .workflow import EventDiscoveryWorkflow
 from .workflow_models import SearchRequest, StopReason, WorkflowRequest
+from .timeline import write_timeline
 
 
 class LocalBatch(SchemaModel):
@@ -71,6 +73,7 @@ class ReplayLLM:
             EVENT_CLASSIFICATION_SYSTEM_PROMPT: "classification",
             QUERY_PLANNER_SYSTEM_PROMPT: "planning",
             EVENT_CHAIN_SYSTEM_PROMPT: "chain",
+            EVENT_MERGE_SYSTEM_PROMPT: "merge",
         }.get(system_prompt)
         if self.index >= len(self.steps) or self.steps[self.index].stage != stage:
             raise RuntimeError("离线响应已耗尽或阶段不匹配")
@@ -122,6 +125,7 @@ def main() -> int:
         FileEvidenceCollector(dataset), SignalXEventProcessor.from_llm(llm), LLMQueryPlanner(llm),
     ).run(request)
     (args.output_dir / "result.json").write_text(result.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8")
+    write_timeline(result, args.output_dir / "timeline.md")
     for item in result.rounds:
         (args.output_dir / f"round-{item.round_index:03d}.json").write_text(
             item.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8",

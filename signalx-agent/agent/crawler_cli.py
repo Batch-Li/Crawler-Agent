@@ -10,6 +10,8 @@ from .crawler_integration import WorkflowDiscoveryRunner, build_crawler_workflow
 from .llm import DeepSeekLLM
 from .models import Event
 from .workflow_models import StopReason, WorkflowRequest
+from .workflow_models import WorkflowResult
+from .timeline import write_timeline
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             (args.output_dir / "result.json").write_text(
                 result.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8",
             )
+            write_timeline(result, args.output_dir / "timeline.md")
             print(json.dumps({"stopReason": result.stop_reason.value, "events": len(result.events),
                               "outputDirectory": str(args.output_dir.resolve())}, ensure_ascii=False))
             return 0 if result.stop_reason == StopReason.COMPLETED else 2
@@ -80,11 +83,19 @@ def main(argv: list[str] | None = None) -> int:
             per_query_limit=limits.per_query_limit,
             max_no_progress_rounds=limits.max_no_progress_rounds,
         )
+        prior_outputs = set((args.data_dir / "discoveries").glob("*.json"))
         summary = run_scheduled_tick(
             config_dir=args.config_dir, data_dir=args.data_dir, crawl_dir=args.crawl_dir,
             base_url=args.base_url, queries_file=queries_file, search_limit=args.limit,
             agent_runner=runner,
         )
+        for path in set((args.data_dir / "discoveries").glob("*.json")) - prior_outputs:
+            output = path.with_suffix(".timeline.md")
+            if output.exists():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload.get("result"), dict) and "stopReason" in payload["result"]:
+                write_timeline(WorkflowResult.model_validate(payload["result"]), output)
         # 摘要不转储上游异常正文或响应内容。
         print(json.dumps({
             "error": bool(summary.get("error")), "crawledItems": summary.get("crawledItems", 0),

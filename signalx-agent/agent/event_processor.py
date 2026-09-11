@@ -11,6 +11,8 @@ from .tool_models import (
     EventExtractionRequest,
 )
 from .tools import EventChainTool, EventClassificationTool, EventExtractionTool
+from .tools.event_merge import EventMergeTool
+from .event_time import ground_event_time
 from .workflow_models import EventClassification, EventProcessingResult
 
 
@@ -24,12 +26,14 @@ class SignalXEventProcessor:
         chain_builder: EventChainTool,
         industry: str | None = None,
         entity_aliases: dict[str, str] | None = None,
+        merger: EventMergeTool | None = None,
     ) -> None:
         self.extractor = extractor
         self.classifier = classifier
         self.chain_builder = chain_builder
         self.industry = industry
         self.entity_resolver = EntityResolver(entity_aliases)
+        self.merger = merger
 
     @classmethod
     def from_llm(
@@ -46,6 +50,7 @@ class SignalXEventProcessor:
             chain_builder=EventChainTool(llm, max_attempts=max_attempts, entity_aliases=entity_aliases),
             industry=industry,
             entity_aliases=entity_aliases,
+            merger=EventMergeTool(llm, max_attempts=max_attempts),
         )
 
     def process(
@@ -53,7 +58,7 @@ class SignalXEventProcessor:
         previous: EventProcessingResult | None = None,
         industry: str | None = None,
     ) -> EventProcessingResult:
-        """只抽取新增/变更证据；完整快照在三个阶段均成功后一次性返回。"""
+        """只抽取增量证据；复核、分类及串联全部成功后提交完整快照。"""
         previous = previous or EventProcessingResult()
         industry = industry or self.industry
         updated_evidence = {item.evidence_id: item for item in evidence}
@@ -64,7 +69,9 @@ class SignalXEventProcessor:
             events = self.extractor.invoke(EventExtractionRequest(
                 evidence=evidence, industry=industry, existing_events=events,
             )).events
-        events = [self.entity_resolver.normalize(event) for event in events]
+        events = [ground_event_time(self.entity_resolver.normalize(event)) for event in events]
+        if self.merger:
+            events = self.merger.invoke(events)
         previous_by_id = {item.event_id: item for item in previous.events}
         classifications = {item.event_id: item for item in previous.classifications}
         changed = [event for event in events if (

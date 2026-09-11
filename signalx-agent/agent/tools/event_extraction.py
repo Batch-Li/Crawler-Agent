@@ -10,6 +10,8 @@ from pydantic import ValidationError
 
 from ..llm import StructuredLLM, generate_json, validation_feedback
 from ..models import Event, Evidence
+from ..evidence_validation import normalized_quote, resolve_anchor
+from ..event_time import ground_event_time
 from ..prompts import EVENT_EXTRACTION_SYSTEM_PROMPT
 from ..tool_models import EventDraft, EventDraftBatch, EventExtractionRequest, EventExtractionResult
 
@@ -53,8 +55,10 @@ class EventExtractionTool:
                     "summary": event.summary,
                     "entities": event.entities,
                     "eventTime": event.event_time.isoformat() if event.event_time else None,
+                    "eventDate": event.event_date.model_dump() if event.event_date else None,
                     "evidenceIds": [item.evidence_id for item in event.evidence],
                     "anchor": event.anchor.model_dump(by_alias=True) if event.anchor else None,
+                    "mergedEventIds": event.merged_event_ids,
                 }
                 for event in existing
             ],
@@ -63,7 +67,7 @@ class EventExtractionTool:
         feedback = None
         last_error = None
         evidence_by_id = {item.evidence_id: item for item in evidence}
-        existing_ids = {event.event_id for event in existing}
+        existing_ids = {key for event in existing for key in [event.event_id, *event.merged_event_ids]}
         for _ in range(self.max_attempts):
             parts = [
                 "请从新 Evidence 抽取事件，并与 existingEvents 匹配。",
@@ -82,10 +86,9 @@ class EventExtractionTool:
                         raise ValueError("事件引用了不存在的 evidenceId: " + ", ".join(sorted(unknown)))
                     if draft.matched_event_id and draft.matched_event_id not in existing_ids:
                         raise ValueError("matchedEventId 必须来自 existingEvents")
-                    source = evidence_by_id[draft.anchor.evidence_id]
-                    quote = _normalize_text(draft.anchor.quote)
-                    if not any(quote in _normalize_text(text) for text in (source.title, source.content, source.snippet) if text):
-                        raise ValueError("anchor.quote 必须是引用证据中真实存在的原文片段")
+                    draft.anchor = resolve_anchor(draft.anchor, list(evidence_by_id.values()))
+                    if draft.time_anchor:
+                        draft.time_anchor = resolve_anchor(draft.time_anchor, list(evidence_by_id.values()))
                 # Event 构建也在重试范围内，不让草稿到正式对象的校验绕过重试。
                 return self._materialize_events(batch.events, evidence_by_id, existing)
             except (ValidationError, ValueError, TypeError) as exc:
@@ -100,9 +103,11 @@ class EventExtractionTool:
                             evidence_by_id: dict[str, Evidence],
                             existing: list[Event]) -> list[Event]:
         events = {event.event_id: event for event in existing}
+        aliases = {key: event.event_id for event in existing for key in event.merged_event_ids}
         changed: dict[str, Event] = {}
         for draft in drafts:
             event_id = draft.matched_event_id or cls._event_id(draft)
+            event_id = aliases.get(event_id, event_id)
             if event_id not in events and not draft.matched_event_id:
                 # 已有 anchor 可反查旧 ID；无 anchor 的旧数据才使用保守匹配。
                 candidates = [
@@ -126,13 +131,17 @@ class EventExtractionTool:
                 title=draft.title,
                 summary=draft.summary if draft.summary is not None else (old.summary if old else None),
                 event_time=draft.event_time or (old.event_time if old else None),
+                event_date=old.event_date if old else None,
+                time_anchor=draft.time_anchor or (old.time_anchor if old else None),
+                time_warnings=old.time_warnings if old else [],
+                merged_event_ids=old.merged_event_ids if old else [],
                 entities=entities,
                 evidence=list(linked.values()),
                 anchor=old.anchor if old and old.anchor else draft.anchor,
                 event_types=old.event_types if old else [],
                 alert_meta=old.alert_meta if old else None,
             )
-            events[event_id] = changed[event_id] = event
+            events[event_id] = changed[event_id] = ground_event_time(event)
         return list(changed.values())
 
     @staticmethod
@@ -143,4 +152,4 @@ class EventExtractionTool:
 
 
 def _normalize_text(value: str) -> str:
-    return " ".join(value.split())
+    return normalized_quote(value)

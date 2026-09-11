@@ -95,6 +95,8 @@ class LLMQueryPlanner:
                     "summary": event.summary,
                     "eventTypes": event.event_types,
                     "entities": event.entities,
+                    "eventDate": event.event_date.model_dump() if event.event_date else None,
+                    "timeWarnings": event.time_warnings,
                     "evidenceCount": len(event.evidence),
                 }
                 for event in snapshot.events[:50]
@@ -104,7 +106,7 @@ class LLMQueryPlanner:
                 for item in snapshot.classifications[:50]
             ],
             "chains": [
-                item.model_dump(by_alias=True) for item in snapshot.chains[:30]
+                item.model_dump(mode="json", by_alias=True) for item in snapshot.chains[:30]
             ],
             "chainUnresolvedQuestions": snapshot.chain_unresolved_questions,
             "unlinkedEventIds": snapshot.unlinked_event_ids,

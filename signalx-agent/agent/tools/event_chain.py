@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -11,6 +11,8 @@ from pydantic import ValidationError
 from ..entity_resolution import EntityResolver
 from ..llm import StructuredLLM, generate_json, validation_feedback
 from ..models import Event
+from ..evidence_validation import normalized_quote, resolve_anchor
+from ..event_time import event_sort_key, time_bounds
 from ..prompts import EVENT_CHAIN_SYSTEM_PROMPT
 from ..tool_models import EventChainDraft, EventChainDraftBatch, EventChainRequest, EventChainResult
 from ..workflow_models import EventChain, TimelineEntry
@@ -45,7 +47,9 @@ class EventChainTool:
             "events": [self.entity_resolver.normalize(e).model_dump(mode="json", by_alias=True)
                        for e in request.events],
             "classifications": [c.model_dump(by_alias=True) for c in request.classifications],
-            "previousChains": [c.model_dump(mode="json", by_alias=True) for c in request.previous_chains],
+            # 旧引文可能来自不同版本的搜索摘要；只传链身份，引用必须重新从当前证据选择。
+            "previousChains": [{"chainId": c.chain_id, "title": c.title, "eventIds": c.event_ids}
+                               for c in request.previous_chains],
         }
         prompt = ("输出 JSON Schema：\n"
                   + json.dumps(EventChainDraftBatch.model_json_schema(by_alias=True), ensure_ascii=False)
@@ -63,11 +67,34 @@ class EventChainTool:
     @classmethod
     def _materialize(cls, batch: EventChainDraftBatch, request: EventChainRequest) -> EventChainResult:
         event_by_id = {e.event_id: e for e in request.events}
+        aliases = {key: e.event_id for e in request.events for key in e.merged_event_ids}
         previous = {c.chain_id: c for c in request.previous_chains}
         chains = []
         seen_ids, seen_members = set(), set()
         for original in batch.chains:
             draft = original.model_copy(deep=True)
+            if len(draft.event_ids) != len(set(draft.event_ids)):
+                raise ValueError("事件链成员不能重复")
+            original_members = set(draft.event_ids)
+            if not original_members.issubset(event_by_id.keys() | aliases.keys()):
+                raise ValueError("事件链成员必须来自当前或已合并的已知事件")
+            original_pairs = set()
+            for relation in draft.relations:
+                pair = frozenset((relation.from_event_id, relation.to_event_id))
+                if len(pair) != 2 or not pair.issubset(original_members) or pair in original_pairs:
+                    raise ValueError("关系两端必须为链内不同事件，且不能重复")
+                original_pairs.add(pair)
+            draft.event_ids = list(dict.fromkeys(aliases.get(key, key) for key in draft.event_ids))
+            relations = []
+            for relation in draft.relations:
+                start, end = relation.from_event_id, relation.to_event_id
+                relation.from_event_id, relation.to_event_id = aliases.get(start, start), aliases.get(end, end)
+                if start != end and relation.from_event_id == relation.to_event_id:
+                    continue  # 同一事件已合并，不把重复报道伪装成关系。
+                relations.append(relation)
+            draft.relations = relations
+            if len(draft.event_ids) < 2:
+                continue
             cls._validate_draft(draft, event_by_id)
             members = frozenset(draft.event_ids)
             if members in seen_members:
@@ -75,7 +102,7 @@ class EventChainTool:
             seen_members.add(members)
             matched = draft.matched_chain_id
             if matched is not None:
-                if matched not in previous or not members.intersection(previous[matched].event_ids):
+                if matched not in previous or not members.intersection(aliases.get(key, key) for key in previous[matched].event_ids):
                     raise ValueError("matchedChainId 必须引用包含共同事件的已有链")
             else:
                 exact = [c.chain_id for c in request.previous_chains if set(c.event_ids) == members]
@@ -87,9 +114,9 @@ class EventChainTool:
             seen_ids.add(chain_id)
             ordered = sorted((event_by_id[key] for key in draft.event_ids), key=_event_sort_key)
             for relation in draft.relations:
-                if relation.relation_type in _DIRECTIONAL and any(
-                        event_by_id[key].event_time is None
-                        for key in (relation.from_event_id, relation.to_event_id)):
+                first, second = (time_bounds(event_by_id[key]) for key in (relation.from_event_id, relation.to_event_id))
+                if relation.relation_type in _DIRECTIONAL and (
+                        first is None or second is None or first[1] >= second[0]):
                     relation.status = "needs_review"
                     draft.unresolved_questions.append(
                         f"{relation.from_event_id} → {relation.to_event_id} 的先后时间待核实。")
@@ -99,7 +126,8 @@ class EventChainTool:
                 confidence=draft.confidence,
                 unresolved_questions=list(dict.fromkeys(draft.unresolved_questions)),
                 timeline=[TimelineEntry(event_id=e.event_id, title=e.title, event_time=e.event_time,
-                                        time_status="known" if e.event_time is not None else "unknown")
+                                        event_date=e.event_date,
+                                        time_status="known" if e.event_time is not None else "partial" if e.event_date else "unknown")
                           for e in ordered],
             ))
         linked = {key for chain in chains for key in chain.event_ids}
@@ -131,15 +159,12 @@ class EventChainTool:
             if not cited.issubset(first_ids | second_ids) or not (
                     cited.intersection(first_ids) and cited.intersection(second_ids)):
                 raise ValueError("每条关系必须引用两端事件的证据，不能借用其他事件的证据")
-            for anchor in relation.evidence:
-                sources = [e for e in [*first.evidence, *second.evidence] if e.evidence_id == anchor.evidence_id]
-                if not any(_text(anchor.quote) in _text(value)
-                           for e in sources for value in (e.title, e.content, e.snippet) if value):
-                    raise ValueError("关系证据 quote 必须为对应证据的连续原文")
+            relation.evidence = [resolve_anchor(anchor, [*first.evidence, *second.evidence]) for anchor in relation.evidence]
             adjacent[start].add(end)
             adjacent[end].add(start)
             if relation.relation_type in _DIRECTIONAL:
-                if first.event_time is not None and second.event_time is not None and first.event_time > second.event_time:
+                first_bounds, second_bounds = time_bounds(first), time_bounds(second)
+                if first_bounds and second_bounds and first_bounds[0] > second_bounds[1]:
                     raise ValueError("有向关系与已知事件时间矛盾")
                 directed[start].add(end)
         visited, pending = set(), [next(iter(members))]
@@ -169,9 +194,8 @@ class EventChainTool:
 
 
 def _text(value: str) -> str:
-    return " ".join(value.split())
+    return normalized_quote(value)
 
 
 def _event_sort_key(event: Event) -> tuple[bool, datetime, str]:
-    return (event.event_time is None,
-            event.event_time or datetime.max.replace(tzinfo=timezone.utc), event.event_id)
+    return event_sort_key(event)

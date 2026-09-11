@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .models import Confidence, Event, Evidence, EvidenceAnchor, SchemaModel
+from .models import Confidence, Event, Evidence, EvidenceAnchor, PartialDate, SchemaModel
 
 
 class WorkflowMode(str, Enum):
@@ -107,7 +107,8 @@ class TimelineEntry(SchemaModel):
     event_id: str
     title: str
     event_time: datetime | None = None
-    time_status: Literal["known", "unknown"]
+    event_date: PartialDate | None = None
+    time_status: Literal["known", "partial", "unknown"]
 
 
 class EventChain(SchemaModel):
@@ -143,6 +144,9 @@ class EventProcessingResult(SchemaModel):
             if len(ids) != len(set(ids)):
                 raise ValueError(f"{name} ID 不能重复")
         event_ids = {event.event_id for event in self.events}
+        aliases = [key for event in self.events for key in event.merged_event_ids]
+        if len(aliases) != len(set(aliases)) or event_ids.intersection(aliases):
+            raise ValueError("合并来源不能重复归属，也不能仍作为独立事件")
         classification_ids = {
             classification.event_id for classification in self.classifications
         }

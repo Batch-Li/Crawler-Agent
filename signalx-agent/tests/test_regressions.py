@@ -56,6 +56,8 @@ class LocalLLM:
         if "查询规划器" in system_prompt:
             return self.plan_responses.pop(0)
         context = json.JSONDecoder().raw_decode(user_prompt.split("输入：\n", 1)[1])[0]
+        if "同一事件复核工具" in system_prompt:
+            return {"groups": []}
         if "事件抽取工具" in system_prompt:
             if self.extraction_responses:
                 result = self.extraction_responses.pop(0)

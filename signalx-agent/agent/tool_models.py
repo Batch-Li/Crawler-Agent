@@ -20,6 +20,7 @@ class EventDraft(SchemaModel):
     evidence_ids: list[str] = Field(min_length=1)
     anchor: EvidenceAnchor
     matched_event_id: str | None = Field(default=None, min_length=1)
+    time_anchor: EvidenceAnchor | None = None
 
     _normalize_time = field_validator("event_time")(utc_time)
 
@@ -32,6 +33,8 @@ class EventDraft(SchemaModel):
             raise ValueError("evidenceIds 必须包含非空的证据 ID")
         if self.anchor.evidence_id not in self.evidence_ids:
             raise ValueError("anchor.evidenceId 必须包含在 evidenceIds 中")
+        if self.time_anchor and self.time_anchor.evidence_id not in self.evidence_ids:
+            raise ValueError("timeAnchor 必须引用本事件证据")
         return self
 
 
@@ -57,6 +60,17 @@ class EventExtractionRequest(SchemaModel):
 
 class EventExtractionResult(SchemaModel):
     events: list[Event] = Field(default_factory=list)
+
+
+class EventMergeGroup(SchemaModel):
+    event_ids: list[str] = Field(min_length=2)
+    reason: str = Field(min_length=1)
+    evidence: list[EvidenceAnchor] = Field(min_length=1)
+    confidence: Confidence
+
+
+class EventMergeBatch(SchemaModel):
+    groups: list[EventMergeGroup]
 
 
 class EventClassificationRequest(SchemaModel):

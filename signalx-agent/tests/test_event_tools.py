@@ -63,6 +63,8 @@ class ProcessorLLM:
     model_name = "processor-fake-model"
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        if "同一事件复核工具" in system_prompt:
+            return {"groups": []}
         if "事件抽取工具" in system_prompt:
             return {
                 "events": [

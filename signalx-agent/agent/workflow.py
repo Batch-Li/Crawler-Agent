@@ -277,8 +277,15 @@ class EventDiscoveryWorkflow:
     def _validate_snapshot(candidate: EventProcessingResult, previous: EventProcessingResult,
                            evidence: dict[str, Evidence]) -> None:
         event_ids = {item.event_id for item in candidate.events}
-        if not {item.event_id for item in previous.events}.issubset(event_ids):
+        merged_ids = {key for item in candidate.events for key in item.merged_event_ids}
+        if not {item.event_id for item in previous.events}.issubset(event_ids | merged_ids):
             raise ValueError("处理器遗漏已有事件；需保留原 eventId")
+        for old in previous.events:
+            if old.event_id in event_ids:
+                continue
+            target = next(item for item in candidate.events if old.event_id in item.merged_event_ids)
+            if not {e.evidence_id for e in old.evidence}.issubset(e.evidence_id for e in target.evidence):
+                raise ValueError("合并已有事件必须保留其证据")
         if event_ids != {item.event_id for item in candidate.classifications}:
             raise ValueError("每个事件必须恰好有一个分类")
         for event in candidate.events:

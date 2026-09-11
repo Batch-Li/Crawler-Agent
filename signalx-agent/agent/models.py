@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -53,6 +54,9 @@ class Evidence(SchemaModel):
     source: str = Field(min_length=1)
     url: str | None = None
     published_at: datetime | None = None
+    has_full_content: bool | None = None
+    source_name: str | None = None
+    quality_warnings: list[str] = Field(default_factory=list)
 
     _normalize_time = field_validator("published_at")(utc_time)
 
@@ -72,6 +76,21 @@ class AlertMeta(SchemaModel):
     platforms: list[str] = Field(default_factory=list)
 
 
+class PartialDate(SchemaModel):
+    """日历日期，不假装拥有精确时刻或时区。"""
+
+    value: str
+    precision: Literal["year", "month", "day"]
+
+    @model_validator(mode="after")
+    def validate_date(self):
+        patterns = {"year": r"\d{4}", "month": r"\d{4}-\d{2}", "day": r"\d{4}-\d{2}-\d{2}"}
+        if not re.fullmatch(patterns[self.precision], self.value):
+            raise ValueError("日期必须与精度一致")
+        date.fromisoformat(self.value + {"year": "-01-01", "month": "-01", "day": ""}[self.precision])
+        return self
+
+
 class Event(SchemaModel):
     """竞品 Agent 的标准输入。"""
 
@@ -79,6 +98,10 @@ class Event(SchemaModel):
     title: str = Field(min_length=1)
     summary: str | None = None
     event_time: datetime | None = None
+    event_date: PartialDate | None = None
+    time_anchor: EvidenceAnchor | None = None
+    time_warnings: list[str] = Field(default_factory=list)
+    merged_event_ids: list[str] = Field(default_factory=list)
     event_types: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
     evidence: list[Evidence] = Field(min_length=1)
@@ -94,6 +117,10 @@ class Event(SchemaModel):
             raise ValueError("同一个 Event 内 evidenceId 不能重复")
         if self.anchor and self.anchor.evidence_id not in ids:
             raise ValueError("Event.anchor 必须引用本事件关联的 Evidence")
+        if self.time_anchor and self.time_anchor.evidence_id not in ids:
+            raise ValueError("timeAnchor 必须引用本事件证据")
+        if len(self.merged_event_ids) != len(set(self.merged_event_ids)) or self.event_id in self.merged_event_ids:
+            raise ValueError("合并来源 ID 必须唯一，且不能包含自身")
         return self
 
 

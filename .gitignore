@@ -1,8 +1,9 @@
 # macOS
 .DS_Store
 
-# 本仓库只跟踪 crawler_tool 与 signalx-agent 两个文件夹
+# 本仓库只跟踪两个项目及仓库配置
 /*
+!/.gitignore
 !/crawler_tool/
 !/signalx-agent/
 
@@ -14,6 +15,12 @@ __pycache__/
 venv/
 dist/
 build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # 密钥与环境变量
 .env
@@ -23,5 +30,6 @@ build/
 
 # 运行产物
 runs/
+/crawler_tool/data/
 *.log
 analysis.json
