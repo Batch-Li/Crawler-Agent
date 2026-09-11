@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# 本仓库只跟踪 crawler_tool 与 signalx-agent 两个文件夹
+/*
+!/crawler_tool/
+!/signalx-agent/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -17,6 +22,6 @@ build/
 *.pem
 
 # 运行产物
-/runs/
+runs/
 *.log
 analysis.json

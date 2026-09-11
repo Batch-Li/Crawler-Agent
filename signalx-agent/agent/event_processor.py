@@ -43,7 +43,7 @@ class SignalXEventProcessor:
         return cls(
             extractor=EventExtractionTool(llm, max_attempts=max_attempts),
             classifier=EventClassificationTool(llm, max_attempts=max_attempts),
-            chain_builder=EventChainTool(entity_aliases=entity_aliases),
+            chain_builder=EventChainTool(llm, max_attempts=max_attempts, entity_aliases=entity_aliases),
             industry=industry,
             entity_aliases=entity_aliases,
         )
@@ -86,12 +86,16 @@ class SignalXEventProcessor:
             EventChainRequest(
                 events=enriched_events,
                 classifications=ordered_classifications,
+                industry=industry,
+                previous_chains=previous.chains,
             )
         )
         return EventProcessingResult(
             events=enriched_events,
             classifications=ordered_classifications,
             chains=chains.chains,
+            unlinked_event_ids=chains.unlinked_event_ids,
+            chain_unresolved_questions=chains.unresolved_questions,
         )
 
     @staticmethod

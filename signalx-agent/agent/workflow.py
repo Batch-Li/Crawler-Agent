@@ -37,9 +37,13 @@ class QueryPlanner(Protocol):
     ) -> QueryPlan: ...
 
 
+class EvidenceFilter(Protocol):
+    def review(self, request: WorkflowRequest, evidence: list[Evidence]) -> list[EvidenceReview]: ...
+
+
 class EventDiscoveryWorkflow:
     def __init__(self, collector: CollectionTool, processor: EventProcessor,
-                 planner: QueryPlanner, relevance_filter=None) -> None:
+                 planner: QueryPlanner, relevance_filter: EvidenceFilter | None = None) -> None:
         self.collector = collector
         self.processor = processor
         self.planner = planner
@@ -102,7 +106,12 @@ class EventDiscoveryWorkflow:
                 ],
                 errors=errors,
                 filtered_evidence=list(filtered.values()), unreviewed_evidence=list(unreviewed.values()),
-                unresolved_questions=unresolved_questions,
+                unresolved_questions=list(dict.fromkeys([
+                    *unresolved_questions, *snapshot.chain_unresolved_questions,
+                    *(question for chain in snapshot.chains for question in chain.unresolved_questions),
+                ])),
+                unlinked_event_ids=snapshot.unlinked_event_ids,
+                chain_unresolved_questions=snapshot.chain_unresolved_questions,
                 stop_message={
                     StopReason.NO_PROGRESS: "连续查询没有新增或更新的有效证据，停止扩搜；待核实问题仍未解决。",
                     StopReason.COMPLETED: "已按当前查询计划处理完毕；事件链为空不影响正常结束。",

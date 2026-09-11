@@ -15,6 +15,7 @@ from .tool_models import (
 )
 from .tools import (
     EventChainTool,
+    EventChainToolError,
     EventClassificationTool,
     EventClassificationToolError,
     EventExtractionTool,
@@ -47,6 +48,7 @@ __all__ = [
     "EventChainRequest",
     "EventChainResult",
     "EventChainTool",
+    "EventChainToolError",
     "EventCategory",
     "EventClassification",
     "EventClassificationRequest",

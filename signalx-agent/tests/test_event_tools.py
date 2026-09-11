@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from datetime import datetime
@@ -41,6 +42,21 @@ class QueueLLM:
         return self.responses.pop(0)
 
 
+def chain_response(events: list[Event], relation_type="RELATED") -> dict[str, Any]:
+    """显式模拟关联协议；用于流水线测试，不代表真实模型的语义判断。"""
+    return {"chains": [{
+        "title": "甲公司产品故事线", "summary": "测试模型指定的关联。",
+        "eventIds": [e.event_id for e in events], "confidence": .9,
+        "relations": [{
+            "fromEventId": first.event_id, "toEventId": second.event_id,
+            "relationType": relation_type, "reason": "测试模型指定的关系。",
+            "evidence": [{"evidenceId": e.evidence[0].evidence_id,
+                          "quote": e.evidence[0].title} for e in (first, second)],
+            "confidence": .9,
+        } for first, second in zip(events, events[1:])],
+    }]}
+
+
 class ProcessorLLM:
     """根据 Prompt 类型生成合法响应，用于验证完整组合链路。"""
 
@@ -68,6 +84,9 @@ class ProcessorLLM:
                     },
                 ]
             }
+        if "事件关联工具" in system_prompt:
+            context = json.JSONDecoder().raw_decode(user_prompt.split("输入：\n", 1)[1])[0]
+            return chain_response([Event.model_validate(e) for e in context["events"]])
         event_ids = list(dict.fromkeys(re.findall(r"evt_[0-9a-f]{20}", user_prompt)))
         return {
             "classifications": [
@@ -188,7 +207,7 @@ class EventToolTests(unittest.TestCase):
             ["evt_1", "evt_2"],
         )
 
-    def test_chain_groups_same_category_and_primary_entity_in_time_order(self) -> None:
+    def test_chain_uses_model_membership_and_sorts_actual_times(self) -> None:
         events = [
             Event(
                 event_id="evt_late",
@@ -220,7 +239,8 @@ class EventToolTests(unittest.TestCase):
             for event in events
         ]
 
-        result = EventChainTool().invoke(
+        llm = QueueLLM([chain_response(events[:2])])
+        result = EventChainTool(llm).invoke(
             EventChainRequest(events=events, classifications=classifications)
         )
 
@@ -230,6 +250,8 @@ class EventToolTests(unittest.TestCase):
             ["evt_early", "evt_late"],
         )
         self.assertIn("甲公司", result.chains[0].title)
+        self.assertEqual(result.unlinked_event_ids, ["evt_other"])
+        self.assertEqual(llm.calls, 1)
 
     def test_processor_runs_tools_and_attaches_primary_category(self) -> None:
         processor = SignalXEventProcessor.from_llm(

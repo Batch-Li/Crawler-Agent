@@ -25,6 +25,7 @@ flowchart TD
 | 组件 | 输入 → 输出 |
 |---|---|
 | CollectionTool.search | SearchRequest → Evidence 列表或含来源状态的 CollectionResult |
+| EvidenceRelevanceTool.review | 种子事件、补充 Evidence → 相关／无关／不确定及原因 |
 | EventExtractionTool.invoke | 增量 Evidence、existingEvents → 完整 Event 列表 |
 | EventClassificationTool.invoke | 待分类 Event → 分类、标签、置信度 |
 | EventChainTool.invoke | Event、分类 → 按主体和类别分组的事件链 |
@@ -51,6 +52,8 @@ result = workflow.run({
 ## 关键规则
 
 - 同 ID 的证据无变化则跳过；新增或变更证据进入抽取，仅重新分类相关事件。
+- 对接工厂为种子扩展启用相关性审查；只有相关证据进入处理，其他证据保留在 filteredEvidence，审查失败的输入保留在 unreviewedEvidence。所有审查调用计入模型额度。
+- 主体按配置中的公司别名精确归一化；产品名不映射成公司，相似字符串不自动合并。
 - 新事件 ID 由证据原文锚点生成；matchedEventId 引用已有事件时保留旧 ID、合并证据。跨来源语义匹配仍需评测。
 - 引用必须存在，anchor.quote 必须来自证据原文；非法模型输出默认最多尝试两次。
 - 每个事件恰好一个主分类；事件链至少两个事件，不表示因果关系。
@@ -66,20 +69,17 @@ result = workflow.run({
 | maxLlmCalls | 24 | 模型调用次数，含失败和格式修正重试 |
 | perRoundQueryLimit | 5 | 每轮查询数 |
 | perQueryLimit | 20 | 每次接收的证据数 |
+| maxNoProgressRounds | 1 | 连续无有效增量轮数；尚未搜索的预设关键词不跳过 |
 
 模型预算按每次 run() 独立计数，不是 token/金额上限。自定义组件须通过 `agent.llm.generate_json()` 调用才会纳入计数；工作流结束后的独立分析需另设预算。
 
 结果包含 evidence、events、classifications、chains、rounds 和 stopReason。未完成时查看 pendingQueries、unprocessedEvidenceIds、errors；rounds 保存证据增量和成功快照。
 
-## 单事件竞品分析与迁移
+`NO_PROGRESS` 表示无有效增量，保留 `unresolvedQuestions` 和 `stopMessage`，不当作信息已核实。对接工厂每轮最多规划 2 个查询；单事件无需为了形成事件链继续搜索。
+
+## 单事件竞品分析
 
 `CompetitorAgent.analyze(Event)`：校验输入 → 调用模型 → 校验结构与证据 ID → 补充固定元信息 → 输出 CompetitorAnalysis。引用存在不等于结论已得到语义验证。
-
-从 v1.2 升级时：
-
-- 自定义 process() 增加 previous、industry 关键字参数；输入改为增量，输出保留全部已有事件。
-- 模型草稿增加必填 anchor、可选 matchedEventId；Event 增加可选 anchor。严格校验的下游模型需同步新增输出字段。
-- 旧事件作为种子或 previous 传入以保留 ID；独立重抽原始数据可能生成新 ID。
 
 ## 爬虫与监测接入
 

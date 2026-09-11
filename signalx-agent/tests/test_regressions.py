@@ -14,6 +14,7 @@ from agent.workflow_models import (
     EventClassification, EventProcessingResult, QueryPlan, StopReason, WorkflowRequest,
 )
 from tests.test_workflow import FakeCollector, FakePlanner, FakeProcessor
+from tests.test_event_tools import chain_response
 
 
 def evidence(key="evd_1", title="甲公司发布产品 A", **kwargs):
@@ -62,6 +63,8 @@ class LocalLLM:
                     raise result
                 return result
             return {"events": [draft(Evidence.model_validate(item)) for item in context["evidence"]]}
+        if "事件关联工具" in system_prompt:
+            return chain_response([Event.model_validate(e) for e in context["events"]])
         return {"classifications": [
             {"eventId": item["eventId"], "category": self.category, "confidence": .9}
             for item in context["events"]
@@ -266,7 +269,7 @@ class RegressionTests(unittest.TestCase):
             ("later", "2026-09-01T02:00:00+00:00"),
             ("unknown", "2020-01-01T00:00:00"),
         )]
-        result = EventChainTool().invoke({
+        result = EventChainTool(LocalLLM()).invoke({
             "events": events,
             "classifications": [EventClassification(
                 event_id=event.event_id, category="PRODUCT_LAUNCH", confidence=.9,

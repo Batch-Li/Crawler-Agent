@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from enum import Enum
+from datetime import datetime
 from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .models import Confidence, Event, Evidence, SchemaModel
+from .models import Confidence, Event, Evidence, EvidenceAnchor, SchemaModel
 
 
 class WorkflowMode(str, Enum):
@@ -92,14 +93,35 @@ class EventClassification(SchemaModel):
         return self
 
 
+class EventRelation(SchemaModel):
+    from_event_id: str = Field(min_length=1)
+    to_event_id: str = Field(min_length=1)
+    relation_type: Literal["FOLLOW_UP", "RESPONSE", "CAUSES", "CONTRADICTS", "RELATED"]
+    reason: str = Field(min_length=1)
+    evidence: list[EvidenceAnchor] = Field(min_length=1)
+    confidence: Confidence
+    status: Literal["supported", "needs_review"] = "supported"
+
+
+class TimelineEntry(SchemaModel):
+    event_id: str
+    title: str
+    event_time: datetime | None = None
+    time_status: Literal["known", "unknown"]
+
+
 class EventChain(SchemaModel):
-    """同类型、同主体或同一故事线的事件集合。"""
+    """模型判断的故事线；历史无关系字段的分组结果仍可读取。"""
 
     chain_id: str = Field(min_length=1)
     category: str = Field(min_length=1)
     title: str = Field(min_length=1)
     summary: str | None = None
     event_ids: list[str] = Field(min_length=1)
+    relations: list[EventRelation] = Field(default_factory=list)
+    confidence: Confidence | None = None
+    unresolved_questions: list[str] = Field(default_factory=list)
+    timeline: list[TimelineEntry] = Field(default_factory=list)
 
 
 class EventProcessingResult(SchemaModel):
@@ -108,6 +130,8 @@ class EventProcessingResult(SchemaModel):
     events: list[Event] = Field(default_factory=list)
     classifications: list[EventClassification] = Field(default_factory=list)
     chains: list[EventChain] = Field(default_factory=list)
+    unlinked_event_ids: list[str] = Field(default_factory=list)
+    chain_unresolved_questions: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_event_references(self) -> "EventProcessingResult":
@@ -129,6 +153,9 @@ class EventProcessingResult(SchemaModel):
             raise ValueError("classification 引用了不存在的 eventId")
         if not chain_event_ids.issubset(event_ids):
             raise ValueError("eventChain 引用了不存在的 eventId")
+        if (len(self.unlinked_event_ids) != len(set(self.unlinked_event_ids))
+                or not set(self.unlinked_event_ids).issubset(event_ids - chain_event_ids)):
+            raise ValueError("unlinkedEventIds 必须为未进入事件链的唯一事件 ID")
         return self
 
 
@@ -235,6 +262,8 @@ class WorkflowResult(SchemaModel):
     unreviewed_evidence: list[Evidence] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     stop_message: str = ""
+    unlinked_event_ids: list[str] = Field(default_factory=list)
+    chain_unresolved_questions: list[str] = Field(default_factory=list)
 
 
 def _unique_non_empty(values: list[str]) -> list[str]:

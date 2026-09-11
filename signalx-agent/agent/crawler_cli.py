@@ -66,12 +66,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if result.stop_reason == StopReason.COMPLETED else 2
 
         from crawler_tool.monitoring.scheduled_tick import load_query_plan, run_scheduled_tick
+        from crawler_tool.monitoring.config_loader import DEFAULT_CONFIG_DIR
 
         queries_file = args.config_dir / "queries.json"
         plan = load_query_plan(queries_file)
         workflow = build_crawler_workflow(
             DeepSeekLLM(), base_url=args.base_url, platforms=plan["platforms"],
-            entities_file=(args.config_dir / "entities.json") if (args.config_dir / "entities.json").exists() else None,
+            entities_file=(args.config_dir / "entities.json") if (args.config_dir / "entities.json").exists()
+            else DEFAULT_CONFIG_DIR / "entities.example.json",
         )
         runner = WorkflowDiscoveryRunner(
             workflow, industry=args.industry, max_llm_calls=limits.max_llm_calls,

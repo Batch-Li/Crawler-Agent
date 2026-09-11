@@ -28,7 +28,7 @@ class DiscoveryDemoTests(unittest.TestCase):
             completed = self.run_demo(target)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             result = WorkflowResult.model_validate_json((target / "result.json").read_text())
-            self.assertEqual(result.llm_calls, 5)
+            self.assertEqual(result.llm_calls, 6)
             self.assertEqual(len(result.events), 2)
             self.assertEqual(len(result.chains), 1)
             first = json.loads((target / "round-001.json").read_text())

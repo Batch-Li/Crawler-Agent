@@ -26,6 +26,8 @@ class ReviewBatch(SchemaModel):
 
 class EvidenceRelevanceTool:
     def __init__(self, llm: StructuredLLM, max_attempts: int = 2):
+        if max_attempts < 1:
+            raise ValueError("max_attempts 必须大于等于 1")
         self.llm = llm
         self.max_attempts = max_attempts
 

@@ -106,6 +106,8 @@ class LLMQueryPlanner:
             "chains": [
                 item.model_dump(by_alias=True) for item in snapshot.chains[:30]
             ],
+            "chainUnresolvedQuestions": snapshot.chain_unresolved_questions,
+            "unlinkedEventIds": snapshot.unlinked_event_ids,
         }
         return self._generate_plan(context)
 

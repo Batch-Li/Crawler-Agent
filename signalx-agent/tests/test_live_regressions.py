@@ -7,12 +7,12 @@ from pathlib import Path
 from agent.crawler_integration import build_crawler_workflow, load_entity_aliases
 from agent.entity_resolution import EntityResolver
 from agent.models import Event, Evidence
-from agent.llm import model_call_budget, ModelBudgetExceeded
+from agent.llm import model_call_budget
 from agent.tools import EventChainTool
 from agent.tools.evidence_relevance import EvidenceRelevanceTool, RELEVANCE_PROMPT
 from agent.workflow import EventDiscoveryWorkflow
 from agent.workflow_models import (
-    CollectionResult, EventClassification, EvidenceReview, QueryPlan, StopReason, WorkflowRequest,
+    CollectionResult, EventClassification, QueryPlan, StopReason, WorkflowRequest,
 )
 from tests.test_crawler_integration import FixtureLLM, item
 from tests.test_workflow import FakeCollector, FakePlanner, FakeProcessor
@@ -45,15 +45,25 @@ class ReviewLLM:
 
 
 class LiveRegressionTests(unittest.TestCase):
-    def test_aliases_group_same_company_without_mutating_inputs(self):
+    def test_aliases_normalize_model_context_without_forcing_a_chain(self):
         events = [Event(event_id=str(i), title="产品发布", entities=[name],
                         evidence=[evidence(str(i), "新品发布")])
                   for i, name in enumerate(["华为技术", "Huawei", "华为云"])]
         types = [EventClassification(event_id=e.event_id, category="PRODUCT_LAUNCH", confidence=.9) for e in events]
-        tool = EventChainTool(entity_aliases={"华为": "华为技术", "Huawei": "华为技术"})
-        chains = tool.invoke({"events": events, "classifications": types}).chains
-        self.assertEqual(len(chains), 1)
-        self.assertEqual(chains[0].event_ids, ["0", "1"])
+        class Model:
+            model_name = "alias-fixture"
+
+            def generate_json(self, system, user):
+                self.context = json.loads(user.split("输入：\n", 1)[1])
+                return {"chains": []}
+
+        model = Model()
+        tool = EventChainTool(model, entity_aliases={"华为": "华为技术", "Huawei": "华为技术"})
+        result = tool.invoke({"events": events, "classifications": types})
+        self.assertEqual(result.chains, [])
+        self.assertEqual(result.unlinked_event_ids, ["0", "1", "2"])
+        self.assertEqual([e["entities"] for e in model.context["events"]],
+                         [["华为技术"], ["华为技术"], ["华为云"]])
         self.assertEqual(events[1].entities, ["Huawei"])
         normalized = EntityResolver({"华为": "华为技术"}).normalize(request().seed_event)
         self.assertEqual(normalized.event_id, "seed")

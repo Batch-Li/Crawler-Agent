@@ -15,6 +15,7 @@ from .models import Evidence, SchemaModel
 from .prompts import (
     EVENT_CLASSIFICATION_SYSTEM_PROMPT, EVENT_EXTRACTION_SYSTEM_PROMPT,
     QUERY_PLANNER_SYSTEM_PROMPT,
+    EVENT_CHAIN_SYSTEM_PROMPT,
 )
 from .query_planner import LLMQueryPlanner
 from .workflow import EventDiscoveryWorkflow
@@ -69,6 +70,7 @@ class ReplayLLM:
             EVENT_EXTRACTION_SYSTEM_PROMPT: "extraction",
             EVENT_CLASSIFICATION_SYSTEM_PROMPT: "classification",
             QUERY_PLANNER_SYSTEM_PROMPT: "planning",
+            EVENT_CHAIN_SYSTEM_PROMPT: "chain",
         }.get(system_prompt)
         if self.index >= len(self.steps) or self.steps[self.index].stage != stage:
             raise RuntimeError("离线响应已耗尽或阶段不匹配")

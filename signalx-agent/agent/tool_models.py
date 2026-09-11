@@ -6,8 +6,8 @@ from datetime import datetime
 
 from pydantic import Field, field_validator, model_validator
 
-from .models import Event, Evidence, EvidenceAnchor, SchemaModel, utc_time
-from .workflow_models import EventChain, EventClassification
+from .models import Confidence, Event, Evidence, EvidenceAnchor, SchemaModel, utc_time
+from .workflow_models import EventChain, EventClassification, EventRelation
 
 
 class EventDraft(SchemaModel):
@@ -84,6 +84,8 @@ class EventClassificationBatch(SchemaModel):
 class EventChainRequest(SchemaModel):
     events: list[Event] = Field(default_factory=list)
     classifications: list[EventClassification] = Field(default_factory=list)
+    industry: str | None = None
+    previous_chains: list[EventChain] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def require_complete_classifications(self) -> "EventChainRequest":
@@ -95,11 +97,31 @@ class EventChainRequest(SchemaModel):
             raise ValueError("event chain 输入的 classification eventId 不能重复")
         if set(event_ids) != set(classification_ids):
             raise ValueError("event chain 要求每个 Event 恰好有一个分类结果")
+        chain_ids = [chain.chain_id for chain in self.previous_chains]
+        if len(chain_ids) != len(set(chain_ids)):
+            raise ValueError("previousChains 的 ID 不能重复")
         return self
+
+
+class EventChainDraft(SchemaModel):
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    event_ids: list[str] = Field(min_length=2)
+    relations: list[EventRelation] = Field(min_length=1)
+    confidence: Confidence
+    unresolved_questions: list[str] = Field(default_factory=list)
+    matched_chain_id: str | None = Field(default=None, min_length=1)
+
+
+class EventChainDraftBatch(SchemaModel):
+    chains: list[EventChainDraft]
+    unresolved_questions: list[str] = Field(default_factory=list)
 
 
 class EventChainResult(SchemaModel):
     chains: list[EventChain] = Field(default_factory=list)
+    unlinked_event_ids: list[str] = Field(default_factory=list)
+    unresolved_questions: list[str] = Field(default_factory=list)
 
 
 def _unique_non_empty(values: list[str]) -> list[str]:
