@@ -1,9 +1,6 @@
 # 采集 Tool 对接指南（写给 agent 组）
 
-> 更新时间：2026-09-09。Agent 已完成接口接线；启动命令见 [Agent README](../signalx-agent/README.md)。当前验证为离线协议联调，真实平台与模型验收尚未执行。
->
-> 本文是爬虫侧交给 agent 组的**唯一必读对接文档**；
-> 背景规范见《DISCOVERY_WORKFLOW.md》，监测层细节见 `crawler_tool/monitoring/MONITORING_DESIGN.md`。
+Agent 已完成接口接线；运行与结果获取见 [Agent README](../signalx-agent/README.md)，测试范围见 [使用报告](../signalx-agent/docs/使用报告.md)。背景见 [发现循环规范](DISCOVERY_WORKFLOW.md) 和 [监测层手册](crawler_tool/monitoring/MONITORING_DESIGN.md)。
 
 ## 1. 一分钟概览
 
@@ -11,10 +8,10 @@
 你们需要：CollectionTool（真实爬虫）+ 真实告警触发的种子事件
 我们提供：① SearchContentCollectionTool（CollectionTool 协议实现，开箱可用）
           ② 告警 → seedEvent 的转换函数（EVENT_EXPANSION §6.2 形态）
-          ③ 自动触发器（score≥1.5 的告警自动转种子，执行点等你注入）
+          ③ 自动触发器（达标告警转种子，Agent monitor 入口已注入执行器）
 ```
 
-两侧代码位置（都在 `F:\monitor\crawler_tool`）：
+以下采集侧路径相对仓库的 `crawler_tool/`；Agent 代码在同级 `signalx-agent/`：
 
 | 组件 | 位置 |
 |---|---|
@@ -53,7 +50,7 @@ evidence_list = collection.search({"query": "华为 Mate XT2 价格", "industry"
 
 ## 3. seedEvent：告警长什么样、转出来是什么
 
-真实样例（来自线上告警 `alr_20260907115257_002`，可直接当 EVENT_EXPANSION 联调用例）：
+历史告警节选，仅展示结构；实际输入使用完整告警或 [Agent README](../signalx-agent/README.md) 中的 Event 格式：
 
 ```json
 {
@@ -83,7 +80,7 @@ evidence_list = collection.search({"query": "华为 Mate XT2 价格", "industry"
   "summary": "规则[竞品发布]，主体\"小米\"，动作\"发布\"",
   "eventTypes": ["PRODUCT_LAUNCH"],
   "entities": ["小米科技"],
-  "evidence": [{"evidenceId": "cnt_...", "title": "...", "source": "sogou_wechat", ...}],
+  "evidence": [{"evidenceId": "cnt_...", "title": "...", "source": "sogou_wechat"}],
   "alertMeta": {"priority": "yellow", "score": 0.634, "matchedRule": "competitor_launch", "platforms": ["sogou_wechat"]}
 }
 ```
@@ -92,10 +89,11 @@ evidence_list = collection.search({"query": "华为 Mate XT2 价格", "industry"
 
 ## 4. 自动触发器：执行点注入
 
-触发管道已上线：每 30 分钟的定时 tick 里，**score ≥ 1.5（可配）的 pending 告警会自动排队**，
-当前因无执行器而记 `agentTrigger: {due: N, skippedReason: "no_runner_configured"}`，状态不动。
+`agent.crawler_cli monitor` 每次执行一轮采集监测，并注入 `DiscoveryRunner` 扩展达标告警。阈值取自 `agentTriggerScore`，仓库配置为 1.5。结果写入指定 `--data-dir/discoveries/`，新结果同时导出 `.timeline.md`。
 
-Agent 侧已实现 `DiscoveryRunner`；`agent.crawler_cli monitor` 会按监测配置注入。手动接线：
+直接运行 `crawler_tool.monitoring.scheduled_tick` 或 `scripts/run_monitor_tick.cmd` 只做采集监测；未注入执行器时显示 `no_runner_configured`，不会产生 Agent 结果。定期执行需另行配置调度器。
+
+手动接线示例（在 `signalx-agent/` 目录，已安装两个项目依赖并配置模型密钥）：
 
 ```python
 from agent import DeepSeekLLM
@@ -104,9 +102,9 @@ from agent.crawler_integration import build_crawler_workflow, WorkflowDiscoveryR
 workflow = build_crawler_workflow(DeepSeekLLM(), platforms=["south_weekend", "toutiao", "cctv_news"])
 runner = WorkflowDiscoveryRunner(workflow, industry="智能手机", max_llm_calls=24)
 
-# 注入后，每次定时 tick 自动派发达标告警：
+# 处理当前已落盘的达标告警；本片段不采集、不注册定时任务：
 from crawler_tool.monitoring import AgentTrigger, MonitoringTool
-tool = MonitoringTool(config_dir="config/monitoring", data_dir="data/monitoring")
+tool = MonitoringTool(config_dir="../crawler_tool/config/monitoring", data_dir="runs/my-topic/monitoring")
 settings = tool.config.settings
 trigger = AgentTrigger(tool, runner=runner, trigger_score=settings.agent_trigger_score,
                        max_runs_per_day=settings.agent_max_runs_per_day,
@@ -114,18 +112,18 @@ trigger = AgentTrigger(tool, runner=runner, trigger_score=settings.agent_trigger
 report = trigger.run_due_triggers()
 ```
 
-已内置的纪律（你们无需重复实现）：同一 alertId 只触发一次；每天最多 10 次；
-结果持久化在 `data/monitoring/discoveries/{alertId}.json`（含种子、预算、你们的结果）；
+已内置的纪律：同一 alertId 只触发一次；每日上限来自配置（仓库配置为 10 次）；
+结果持久化在监测数据目录的 `discoveries/{alertId}.json`（含种子、预算和 Agent 结果）；
 无 runner 时管道空转不影响人工判读。
 
 `search_with_reports()` 保留来源状态，Agent 用 `CrawlerCollectionTool` 接收。种子内同 ID 证据合并，原始告警不变。结果以 JSON 兼容字典返回；`executionStatus` 区分完成、部分完成、失败。执行失败同样落盘、占用每日额度，不自动重试。
 
 ## 5. 采集侧现况与边界（联调前知悉）
 
-- 轮询平台：南周/头条/央视网/微博/搜狗微信（每 30 分钟，5 平台 × 2 查询）；
+- 查询、每轮数量和平台取自 `queries.json`；仓库配置为南周/头条/央视网/微博/搜狗微信，每轮 2 个查询；
 - 小红书/抖音/微信：网络不可达（签名墙/平台限制），数据经**手动捕获投喂**进会话视图，
   `includeCaptured` 已把它们并入监测——但 CollectionTool 的 search **不包含**这三个平台的实时采集；
-- 搜狗微信处于试用期（至 2026-09-14）：返回**包装链接**（非原文 URL）、无正文、验证码即停；
+- 搜狗微信默认禁用：需在爬虫服务启动环境配置 `SOGOU_WECHAT_MODE=anonymous_best_effort`，或从监测平台列表移除。返回**包装链接**（非原文 URL）、无正文、验证码即停；
 - 部分条目 `publishedAt` 为空（来源未给）——已有组内时间继承机制，但 Evidence 的
   publishedAt 可能为 null，你们的排序逻辑请容忍空值；
 - 失败语义：CollectionTool 的上游任何来源失败都会体现在 search-content 的
@@ -133,17 +131,18 @@ report = trigger.run_due_triggers()
 
 ## 6. 联调步骤建议
 
-1. 用本文 §3 的真实样例 seedEvent 跑一次 EVENT_EXPANSION（离线、fake CollectionTool）；
-2. 启动爬虫服务 → 用真实 SearchContentCollectionTool 跑同一 seedEvent（预算 6 次爬取）；
+1. 先运行 Agent README 的离线演示，确认环境与文件输出；
+2. 启动爬虫服务，用实际 Event 执行 `discover --seed`，显式设置搜索与模型预算；
 3. 检查 Evidence 全部通过你们 Schema、轮次记录完整；
-4. 注入 DiscoveryRunner → 观察一次自动触发全链路。
+4. 使用 Agent 的 `monitor` 入口检查告警扩展；未达阈值时不会触发。
 
 ## 7. 环境
 
 ```powershell
-cd F:\monitor\crawler_tool
-F:\py311\python.exe -m pytest -q            # 离线测试（186+ 用例）
-F:\py311\python.exe -m crawler_tool.interfaces.app --serve   # 服务，127.0.0.1:8301
+# 从仓库根目录进入；先按 Agent README 安装并激活环境
+cd crawler_tool
+python -m pytest -q            # 默认离线测试
+python -m crawler_tool.interfaces.app --serve   # 服务，127.0.0.1:8301
 ```
 
-凭据类来源（微博授权/微信）当前全部停用，环境无需任何 Cookie。
+默认采集无需 Cookie；授权来源凭据只在爬虫服务环境配置，不交给 Agent、不提交仓库。

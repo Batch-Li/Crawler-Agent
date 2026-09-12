@@ -4,25 +4,46 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from .evidence_validation import resolve_anchor
-from .models import Event, EvidenceAnchor, PartialDate
+from .models import Event, Evidence, EvidenceAnchor, PartialDate
 
 _DATE = re.compile(r'(?<!\d)([12]\d{3})(?:\s*年\s*|-)(\d{1,2})(?:(?:\s*月\s*|-)(\d{1,2})(?:\s*[日号])?|\s*月|(?![\d-]))(?!\d)')
 _ISO = re.compile(r'(?<!\d)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})(?!\d)')
 
 
-def _dates(text):
+def _dates(text, excluded_spans=()):
     result = []
+    occupied = list(excluded_spans)
     for match in _DATE.finditer(text):
+        if any(match.start() < end and match.end() > start for start, end in excluded_spans):
+            continue
+        occupied.append(match.span())
         year, month, day = match.groups()
         value = f'{int(year):04d}-{int(month):02d}' + (f'-{int(day):02d}' if day else '')
         try:
             result.append((PartialDate(value=value, precision='day' if day else 'month'), match.group()))
         except ValueError:
             continue
-    if not result:
-        result = [(PartialDate(value=m.group(1), precision='year'), m.group())
-                  for m in re.finditer(r'(?<!\d)([12]\d{3})年', text)]
+    for match in re.finditer(r'(?<!\d)([12]\d{3})年', text):
+        if not any(match.start() < end and match.end() > start for start, end in occupied):
+            result.append((PartialDate(value=match.group(1), precision='year'), match.group()))
     return result
+
+
+def refresh_event_evidence(event: Event, updates: dict[str, Evidence]) -> Event:
+    """替换来源时复核继承的时间引用；旧快照及新模型引用不受影响。"""
+    refreshed = event.model_copy(deep=True)
+    refreshed.evidence = [updates.get(item.evidence_id, item) for item in refreshed.evidence]
+    anchor = event.time_anchor
+    if anchor and any(item.evidence_id == anchor.evidence_id and updates.get(item.evidence_id, item) != item
+                      for item in event.evidence):
+        try:
+            refreshed.time_anchor = resolve_anchor(anchor, refreshed.evidence)
+        except ValueError:
+            refreshed.event_time = refreshed.event_date = refreshed.time_anchor = None
+            refreshed.time_warnings = list(dict.fromkeys([
+                *refreshed.time_warnings, '证据内容已更新，原时间引用失效，已清除旧时间。',
+            ]))
+    return refreshed
 
 
 def ground_event_time(event: Event) -> Event:
@@ -46,13 +67,17 @@ def ground_event_time(event: Event) -> Event:
     event.event_date = None
     event.time_anchor = anchor
     if anchor:
-        instants = {m.group() for m in _ISO.finditer(anchor.quote)}
-        if len(instants) == 1:
+        instant_matches = list(_ISO.finditer(anchor.quote))
+        instants = {m.group() for m in instant_matches}
+        dates = {d.value: d for d, _ in _dates(anchor.quote, [m.span() for m in instant_matches])}
+        if len(instants) == 1 and not dates:
             event.event_time = datetime.fromisoformat(next(iter(instants)).replace('Z', '+00:00')).astimezone(timezone.utc)
-        else:
-            dates = {d.value: d for d, _ in _dates(anchor.quote)}
-            if len(dates) == 1:
-                event.event_date = next(iter(dates.values()))
+        elif len(dates) == 1 and not instants:
+            event.event_date = next(iter(dates.values()))
+        elif len(instants) + len(dates) > 1:
+            event.time_warnings = list(dict.fromkeys([
+                *event.time_warnings, '时间引用包含多个日期或时刻，事件时间待核实。',
+            ]))
     if attempted is not None and event.event_time is None:
         warning = ('仅有日期证据，未保留模型补出的日或时刻。' if event.event_date
                    else '事件时刻缺少明确原文依据，已置空。')

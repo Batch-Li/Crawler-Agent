@@ -29,6 +29,8 @@ def render_timeline(result: WorkflowResult | EventProcessingResult, *, note='') 
         lines += [_cell(note), '']
     if isinstance(result, WorkflowResult):
         lines += [f'运行状态：{result.stop_reason.value}；事件 {len(result.events)} 个，候选链 {len(result.chains)} 条。', '']
+        if result.stop_message:
+            lines += ['停止说明：' + _cell(result.stop_message), '']
         if result.unprocessed_evidence_ids:
             lines += [f'尚有 {len(result.unprocessed_evidence_ids)} 条新增／更新证据未完成处理。', '']
     lines += ['关系来自模型判断；日期按证据精度显示，未知日期单列，箭头不等于因果。', '']
@@ -39,6 +41,7 @@ def render_timeline(result: WorkflowResult | EventProcessingResult, *, note='') 
         groups.append(('未串联事件', unlinked, None))
     if not groups:
         lines += ['暂无事件或可展示的时间链。', '']
+    shown_questions = set()
     for title, events, chain in groups:
         lines += ['## ' + _cell(title), '']
         events = sorted(events, key=event_sort_key)
@@ -73,6 +76,7 @@ def render_timeline(result: WorkflowResult | EventProcessingResult, *, note='') 
             lines.append('')
         questions = []
         for question in [*(chain.unresolved_questions if chain else []), *(w for e in events for w in e.time_warnings)]:
+            shown_questions.add(question.strip())
             for event in events:
                 for key in [event.event_id, *event.merged_event_ids]:
                     question = question.replace(key, labels[event.event_id])
@@ -83,6 +87,23 @@ def render_timeline(result: WorkflowResult | EventProcessingResult, *, note='') 
         merged = sum(len(e.merged_event_ids) for e in events)
         if merged:
             lines += [f'已合并 {merged} 个重复事件 ID；完整引用、原文和 ID 沿革见同目录结果 JSON。', '']
+    remaining = []
+    all_questions = [*result.chain_unresolved_questions]
+    if isinstance(result, WorkflowResult):
+        all_questions.extend(result.unresolved_questions)
+    names = {key: event.title for event in by_id.values()
+             for key in [event.event_id, *event.merged_event_ids]}
+    for question in all_questions:
+        question = question.strip()
+        if not question or question in shown_questions:
+            continue
+        shown_questions.add(question)
+        for key in sorted(names, key=len, reverse=True):
+            question = question.replace(key, '「' + names[key] + '」')
+        if question not in remaining:
+            remaining.append(question)
+    if remaining:
+        lines += ['## 整体待核实', '', *['- ' + _cell(q) for q in remaining], '']
     return '\n'.join(lines)
 
 

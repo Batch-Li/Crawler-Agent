@@ -1,8 +1,7 @@
 # 定时监测层设计与运行手册（MONITORING_DESIGN）
 
-> 更新时间：2026-09-07
 > 代码位置：`crawler_tool/monitoring/`
-> 上游约定：爬虫 Tool 见《交接文档.md》；agent 发现循环见《DISCOVERY_WORKFLOW.md》。
+> 相关说明：[采集 Tool](../../README.md)、[发现循环规范](../../DISCOVERY_WORKFLOW.md)、[Agent 完整使用方法](../../../signalx-agent/README.md)。
 
 ## 1. 定位与边界
 
@@ -16,7 +15,7 @@
 ## 2. 总体链路
 
 ```text
-每 30 分钟定时爬取（调度脚本，方案 A）
+单次采集（定期执行由外部调度器安排）
   → 条目 JSONL 落盘
   → run_tick（监测 tick）
        预处理（归一化/子句切分/新鲜度门槛）
@@ -74,13 +73,13 @@
 | `matching.py` | 主体匹配（blocklist 否决）、动作词/宾语窗口 |
 | `triage.py` | LLM 分诊：prompt 构造（防注入）、严格 JSON 解析、`TriageClient` 协议 |
 | `engine.py` | 漏斗编排、压制、打分分级、状态回写 |
-| `agent_trigger.py` | Agent 自动触发器：score≥阈值(默认2.0)的 pending 告警 → 种子事件 → DiscoveryRunner 执行点（幂等/每日上限/无 runner 时只报告不改状态）。业务决策 2026-09-07：自动化优先，触发线定在橙级 |
+| `agent_trigger.py` | Agent 自动触发器：score 达到配置阈值的 pending 告警 → 种子事件 → DiscoveryRunner（幂等/每日上限/无 runner 时只报告不改状态） |
 | `store.py` | 告警 JSONL / 观察箱 / 状态 JSON（原子写 + 保留期清理） |
 | `config_loader.py` | 包内默认 + 外部覆盖目录，坏配置拒绝启动 |
 | `agent_bridge.py` | `MonitoringTool` 门面、`SearchContentCollectionTool`、seedEvent 转换 |
 | `llm_clients.py` | 可选 LLM client（DeepSeekTriage，OpenAI 兼容）；键只读环境变量 `MONITOR_LLM_API_KEY` |
 | `run_tick.py` | CLI 三合一：`--items`（跑 tick）/ `--report`（日报）/ `--set-status ID 状态 --note`（标注）；`--triage deepseek` 接慢车道 |
-| `scheduled_tick.py` | **一站式定时命令**：查询轮换调本机爬虫服务 → 响应存档 → 就地跑监测。调度任务唯一入口 |
+| `scheduled_tick.py` | 单次采集监测：查询轮换调爬虫服务 → 响应存档 → 就地跑监测；CLI 不注入 Agent 执行器 |
 | `default_config/` | 包内默认规则与示例主体（虚构，替换后再用） |
 
 ### 配置
@@ -93,32 +92,36 @@ config/monitoring/entities.json                              # 真实主体档�
 config/monitoring/queries.json                               # 爬取查询池：queries / queriesPerTick / platforms
 ```
 
-### 一站式定时命令（30 分钟调度任务的实际入口）
+### 单次采集监测命令
+
+先安装依赖、激活环境，在仓库的 `crawler_tool/` 目录运行。持续执行需自行配置调度器；完整监测 + Agent 使用 [Agent README](../../../signalx-agent/README.md) 的 `monitor` 入口。
 
 ```powershell
 # 前提：爬虫服务已 --serve 启动
-F:\py311\python.exe -m crawler_tool.monitoring.scheduled_tick `
+python -m crawler_tool.monitoring.scheduled_tick `
   --config-dir config/monitoring --data-dir data/monitoring
 ```
 
 按 `queries.json` 的池子轮换取 `queriesPerTick` 个查询 → 每查询对 `platforms` 各发一次
-搜索（预算 = 查询数 × 平台数，默认 4 请求/轮）→ 整轮响应存档到
+搜索（请求预算 = 查询数 × 平台数，按当前配置计算）→ 整轮响应存档到
 `data/crawl/crawl_YYYYMMDD.jsonl` → 条目就地喂给监测引擎。服务不可达时返回带
 `--serve` 提示的错误并以退出码 2 结束（调度器可见）；单个查询失败不拖垮整轮。
+
+`sogou_wechat` 默认禁用；在爬虫服务终端启用后再纳入 `platforms`，具体设置见 [来源说明](../../README.md)。
 
 ### CLI 用法（跑 tick / 看日报 / 标注，三合一）
 
 ```powershell
-# 跑一次监测（30 分钟调度的第二步）
-F:\py311\python.exe -m crawler_tool.monitoring.run_tick `
+# 对已有采集文件跑一次监测，替换为实际文件名
+python -m crawler_tool.monitoring.run_tick `
   --items data/crawl/crawl_20260906.jsonl `
   --config-dir config/monitoring --data-dir data/monitoring
 
 # 每日日报（告警摘要 + 观察箱尾部）
-F:\py311\python.exe -m crawler_tool.monitoring.run_tick --report --data-dir data/monitoring
+python -m crawler_tool.monitoring.run_tick --report --data-dir data/monitoring
 
 # 标注判读结果（灰度期每日动作）
-F:\py311\python.exe -m crawler_tool.monitoring.run_tick `
+python -m crawler_tool.monitoring.run_tick `
   --set-status alr_20260906_120000_001 accepted --note "确认竞品发布"
 ```
 
@@ -143,8 +146,7 @@ for alert in tool.pending_alerts():                  # pending 告警（最新�
 ```
 
 `SearchContentCollectionTool` 实现工作流的 `CollectionTool` 协议（默认 POST 本机
-`/api/v1/tool/search-content`，可注入 `search_fn` 进程内直调）——补上
-《DISCOVERY_WORKFLOW.md》§12 "真实爬虫 CollectionTool 尚未接入"的缺口。
+`/api/v1/tool/search-content`，可注入 `search_fn` 进程内直调）。Agent 接线与结果导出见 [对接指南](../../采集Tool对接指南.md)。
 
 ### 接入自研 LLM（慢车道分诊）
 

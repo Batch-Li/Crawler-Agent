@@ -2,7 +2,7 @@
 
 这是 30 分钟调度任务实际要调用的唯一命令（爬取与监测的粘合层）：
 
-    F:\\py311\\python.exe -m crawler_tool.monitoring.scheduled_tick ^
+    python -m crawler_tool.monitoring.scheduled_tick ^
         --config-dir config/monitoring --data-dir data/monitoring
 
 前提：爬虫服务已用 `--serve` 启动。查询清单与轮换大小来自
@@ -89,7 +89,7 @@ def run_scheduled_tick(
         except Exception as exc:
             return {
                 "error": f"crawler service unreachable at {base_url}: {type(exc).__name__}",
-                "hint": "先启动爬虫服务：F:\\py311\\python.exe -m crawler_tool.interfaces.app --serve",
+                "hint": "先启动爬虫服务：python -m crawler_tool.interfaces.app --serve",
             }
 
     selected = rotate_queries(plan["queries"], plan["queries_per_tick"], tick_index)

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from ..llm import StructuredLLM, generate_json, validation_feedback
 from ..models import Event, Evidence
 from ..evidence_validation import normalized_quote, resolve_anchor
-from ..event_time import ground_event_time
+from ..event_time import ground_event_time, refresh_event_evidence
 from ..prompts import EVENT_EXTRACTION_SYSTEM_PROMPT
 from ..tool_models import EventDraft, EventDraftBatch, EventExtractionRequest, EventExtractionResult
 
@@ -123,6 +123,8 @@ class EventExtractionTool:
                 if len(candidates) == 1:
                     event_id = candidates[0].event_id
             old = events.get(event_id)
+            if old:
+                old = refresh_event_evidence(old, evidence_by_id)
             linked = {item.evidence_id: item for item in old.evidence} if old else {}
             linked.update({key: evidence_by_id[key] for key in draft.evidence_ids})
             entities = list(dict.fromkeys([*(old.entities if old else []), *draft.entities]))

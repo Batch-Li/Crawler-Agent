@@ -7,11 +7,11 @@ from pathlib import Path
 
 from agent import Event, EventDiscoveryWorkflow, SignalXEventProcessor
 from agent.evidence_validation import resolve_anchor
-from agent.event_time import ground_event_time
+from agent.event_time import ground_event_time, refresh_event_evidence
 from agent.models import Evidence, EvidenceAnchor, PartialDate
 from agent.timeline import render_timeline, write_timeline
 from agent.tool_models import EventMergeBatch
-from agent.tools import EventChainTool, EventMergeTool
+from agent.tools import EventChainTool, EventMergeTool, EventExtractionToolError
 from agent.tools.event_extraction import EventExtractionTool
 from agent.workflow_models import EventProcessingResult, StopReason
 from crawler_tool.monitoring.agent_bridge import item_to_evidence
@@ -75,6 +75,66 @@ class RepairTests(unittest.TestCase):
             event = ground_event_time(timed(text, attempted=None))
             self.assertIsNone(event.event_time)
             self.assertIsNone(event.event_date)
+
+    def test_mixed_precision_and_iso_dates_are_not_mistaken_for_one_time(self):
+        for text in ('产品于2024年发布，2026年9月1日停产。',
+                     '2024年发布，2026年9月停产。',
+                     '2024年发布，2026-09-03T12:00:00Z停产。',
+                     '计划2026年9月发布，实际于2026-09-03T12:00:00Z开售。',
+                     '2026-09-01T12:00:00Z发布，2026-09-02T12:00:00Z开售。'):
+            with self.subTest(text=text):
+                event = ground_event_time(timed(text, attempted=None))
+                self.assertIsNone(event.event_time)
+                self.assertIsNone(event.event_date)
+                self.assertTrue(any('多个日期或时刻' in warning for warning in event.time_warnings))
+
+    def test_updated_source_clears_stale_inherited_time_with_or_without_event_draft(self):
+        old = ground_event_time(timed('产品于2024年9月发布。', attempted=None))
+        previous = EventProcessingResult(events=[old])
+        original = previous.model_copy(deep=True)
+        updated = Evidence(evidence_id='source', content='产品现已上市。', source='测试')
+        draft = {'title': '产品发布', 'matchedEventId': 'event', 'evidenceIds': ['source'],
+                 'anchor': {'evidenceId': 'source', 'quote': updated.content}}
+        classification = {'classifications': [{'eventId': 'event', 'category': 'PRODUCT_LAUNCH', 'confidence': .9}]}
+        for drafts in ([], [draft]):
+            with self.subTest(drafts=bool(drafts)):
+                processor = SignalXEventProcessor.from_llm(QueueLLM([{'events': drafts}, classification]))
+                result = processor.process([updated], previous=previous)
+                event = result.events[0]
+                self.assertIsNone(event.event_time)
+                self.assertIsNone(event.event_date)
+                self.assertIsNone(event.time_anchor)
+                self.assertTrue(any('原时间引用失效' in warning for warning in event.time_warnings))
+                self.assertEqual(previous, original)
+
+    def test_source_refresh_preserves_valid_time_and_leaves_other_events_unchanged(self):
+        old = ground_event_time(timed('产品于2024年9月发布。', attempted=None))
+        original = old.model_copy(deep=True)
+        for updates in ({}, {'other': evidence('other', '其他事件')},
+                        {'source': Evidence(evidence_id='source', source='测试', content='产品于2024年9月发布。现已上市。')}):
+            with self.subTest(updates=list(updates)):
+                result = ground_event_time(refresh_event_evidence(old, updates))
+                self.assertEqual(result.event_date, old.event_date)
+                self.assertEqual(result.time_anchor, old.time_anchor)
+                self.assertEqual(result.time_warnings, old.time_warnings)
+                self.assertEqual(old, original)
+
+    def test_extractor_updates_stale_time_but_rejects_new_fabricated_anchor(self):
+        old = ground_event_time(timed('产品于2024年9月发布。', attempted=None))
+        original = old.model_copy(deep=True)
+        updated = Evidence(evidence_id='source', content='产品于2024年10月发布。', source='测试')
+        draft = {'title': '产品发布', 'matchedEventId': 'event', 'evidenceIds': ['source'],
+                 'anchor': {'evidenceId': 'source', 'quote': updated.content}}
+        request = {'evidence': [updated], 'existingEvents': [old]}
+        result = EventExtractionTool(QueueLLM([{'events': [draft]}])).invoke(request).events[0]
+        self.assertIsNone(result.event_date)
+        draft['timeAnchor'] = {'evidenceId': 'source', 'quote': updated.content}
+        result = EventExtractionTool(QueueLLM([{'events': [draft]}])).invoke(request).events[0]
+        self.assertEqual(result.event_date.value, '2024-10')
+        draft['timeAnchor']['quote'] = '产品于2027年9月发布。'
+        with self.assertRaises(EventExtractionToolError):
+            EventExtractionTool(QueueLLM([{'events': [draft]}]), max_attempts=1).invoke(request)
+        self.assertEqual(old, original)
 
     def test_extraction_persists_time_anchor_and_summary_quality(self):
         item = Evidence(evidence_id='source', title='产品发布', snippet='产品于2024年9月推出',

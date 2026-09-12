@@ -200,7 +200,7 @@ python -m agent.crawler_cli monitor --live --industry "目标行业" --config-di
 ### 读取与溯源
 
 1. 先看 `result.json` 的 `stopReason`／`stopMessage`，确认完成程度；监测结果先进入内层 `result`。
-2. 看 `timeline.md`，按原文链接核实关键日期和关系。未关联事件也保留，日期未知不代表发生得更晚。
+2. 看 `timeline.md` 中的停止说明、事件链和整体待核实项，按原文链接核实关键日期和关系。未关联事件也保留，日期未知不代表发生得更晚。
 3. 查 JSON：`events[].evidence` 是事件证据；`chains[].relations` 是关系类型、理由、原文引用及复核状态；`rounds` 是各轮采集与处理记录。
 4. 未完成项看 `unresolvedQuestions`、`pendingQueries`、`unprocessedEvidenceIds`、`errors`。种子过滤记录在 `filteredEvidence`，审查失败输入在 `unreviewedEvidence`。
 

@@ -12,7 +12,7 @@ from .tool_models import (
 )
 from .tools import EventChainTool, EventClassificationTool, EventExtractionTool
 from .tools.event_merge import EventMergeTool
-from .event_time import ground_event_time
+from .event_time import ground_event_time, refresh_event_evidence
 from .workflow_models import EventClassification, EventProcessingResult
 
 
@@ -62,9 +62,8 @@ class SignalXEventProcessor:
         previous = previous or EventProcessingResult()
         industry = industry or self.industry
         updated_evidence = {item.evidence_id: item for item in evidence}
-        events = [self.entity_resolver.normalize(event.model_copy(update={
-            "evidence": [updated_evidence.get(item.evidence_id, item) for item in event.evidence],
-        })) for event in previous.events]
+        events = [self.entity_resolver.normalize(refresh_event_evidence(event, updated_evidence))
+                  for event in previous.events]
         if evidence:
             events = self.extractor.invoke(EventExtractionRequest(
                 evidence=evidence, industry=industry, existing_events=events,

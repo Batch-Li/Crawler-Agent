@@ -3,7 +3,7 @@
 用法：
 
   跑一次监测（30 分钟调度的第二步，紧跟爬取脚本之后）：
-    F:\\py311\\python.exe -m crawler_tool.monitoring.run_tick ^
+    python -m crawler_tool.monitoring.run_tick ^
         --items data/crawl/crawl_20260906.jsonl ^
         --config-dir config/monitoring --data-dir data/monitoring
 

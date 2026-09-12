@@ -6,8 +6,9 @@ from copy import deepcopy
 from agent import Event, EventChainTool, EventChainToolError, SignalXEventProcessor
 from agent.llm import ModelBudgetExceeded, model_call_budget
 from agent.query_planner import LLMQueryPlanner
+from agent.timeline import render_timeline
 from agent.workflow import EventDiscoveryWorkflow
-from agent.workflow_models import EventChain, StopReason
+from agent.workflow_models import EventChain, EventProcessingResult, StopReason, WorkflowResult
 from tests.test_event_tools import QueueLLM, chain_response, evidence
 from tests.test_regressions import LocalLLM, planner, request
 from tests.test_workflow import FakeCollector
@@ -200,6 +201,44 @@ class ChainTests(unittest.TestCase):
                                          "category": "PRODUCT_LAUNCH", "eventIds": ["a", "b"]})
         self.assertEqual(old.relations, [])
         self.assertEqual(old.timeline, [])
+
+    def test_timeline_includes_workflow_stop_and_global_questions_without_events(self):
+        result = WorkflowResult(
+            mode='BULK_DISCOVERY', industry='测试', evidence=[], events=[],
+            classifications=[], chains=[], rounds=[], stop_reason=StopReason.NO_EVIDENCE,
+            stop_message='来源没有返回可用材料',
+            unresolved_questions=['缺少独立来源', '缺少独立来源'],
+            chain_unresolved_questions=['需要后续进展'],
+        )
+        text = render_timeline(result)
+        self.assertIn('停止说明：来源没有返回可用材料', text)
+        self.assertIn('## 整体待核实', text)
+        self.assertEqual(text.count('缺少独立来源'), 1)
+        self.assertIn('需要后续进展', text)
+
+    def test_snapshot_timeline_exposes_unlinked_questions_with_readable_event_names(self):
+        event = Event(event_id='evt_current', title='产品发布',
+                      evidence=[evidence('source', '产品发布')], merged_event_ids=['evt_old'])
+        result = EventProcessingResult(events=[event], chain_unresolved_questions=[
+            'evt_old 的具体日期待核实', 'evt_current 的具体日期待核实'])
+        before = result.model_dump_json()
+        text = render_timeline(result)
+        self.assertIn('「产品发布」 的具体日期待核实', text)
+        self.assertNotIn('evt_old', text)
+        self.assertNotIn('evt_current', text)
+        self.assertEqual(text.count('具体日期待核实'), 1)
+        self.assertEqual(result.model_dump_json(), before)
+
+    def test_timeline_does_not_repeat_questions_already_shown_in_a_chain(self):
+        events = chain_input()['events'][:2]
+        chain = EventChain(chain_id='chain', title='产品进展', category='STORYLINE',
+                           event_ids=[e.event_id for e in events],
+                           unresolved_questions=['需核实关联方向'])
+        result = EventProcessingResult(events=events, chains=[chain],
+                                       chain_unresolved_questions=['需核实关联方向'])
+        text = render_timeline(result)
+        self.assertEqual(text.count('需核实关联方向'), 1)
+        self.assertNotIn('## 整体待核实', text)
 
 
 if __name__ == "__main__":
