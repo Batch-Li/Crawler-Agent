@@ -147,3 +147,29 @@ def test_south_weekend_payload_unparseable_time_stays_empty_with_raw():
     assert payload["publishedAtConfidence"] == 0.0
     assert "published_at_unparsed" in payload["warnings"]
     assert payload["ext"]["publishedAtRaw"] == "_not-a-time_"
+
+
+def test_south_weekend_detail_includes_content_when_qualified():
+    """正文合格（≥40 字符）时随同一次 GET 进入 metadata。"""
+    page = (FIXTURES / "infzm_contents_detail.html").read_text(encoding="utf-8").replace(
+        "据报道，该产品于发布会上正式亮相。",
+        "据报道，该产品于发布会上正式亮相，现场演示了多轮对话与工单自动流转能力，" * 3,
+    )
+    result = SouthWeekendAdapter(http_get=lambda url, timeout: _DetailResponse(page.encode("utf-8"))).fetch_detail(
+        "https://www.infzm.com/contents/317022"
+    )
+    assert result.status is SourceStatus.SUCCESS
+    assert result.response_metadata["publishedAt"] == "2026-08-20T01:15:00+00:00"
+    assert "正式亮相" in result.response_metadata["content"]
+    assert result.response_metadata["contentDetectedBy"] == "visible_article"
+
+
+def test_south_weekend_detail_success_with_content_only():
+    """时间无信号但正文合格：仍 SUCCESS，metadata 只带正文字段。"""
+    page = "<html><body><div class='nfzm-content'><p>" + "正文内容足够长，包含充分的事实细节与背景。" * 5 + "</p></div></body></html>"
+    result = SouthWeekendAdapter(http_get=lambda url, timeout: _DetailResponse(page.encode("utf-8"))).fetch_detail(
+        "https://www.infzm.com/contents/317022"
+    )
+    assert result.status is SourceStatus.SUCCESS
+    assert "publishedAt" not in result.response_metadata
+    assert "content" in result.response_metadata

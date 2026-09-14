@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from crawler_tool.domain import ContentSearchRequest, SourceErrorCode, SourceStatus
+from crawler_tool.infrastructure.detail_content import parse_detail_content
+from crawler_tool.infrastructure.detail_time import parse_detail_time
 from crawler_tool.sources.base import AdapterResult, RawItem, SourceAdapter
 
 BASE_URL = "https://news.cctv.com"
@@ -26,12 +28,13 @@ class CctvNewsAdapter(SourceAdapter):
     """
 
     platform = "cctv_news"
-    adapter_version = "0.1.0-anonymous"
+    adapter_version = "0.2.0-anonymous"
     allowed_columns = ("china", "world", "society", "economy", "sports", "military", "tech")
 
-    def __init__(self, http_get: Any | None = None, *, column: str = "china") -> None:
+    def __init__(self, http_get: Any | None = None, *, column: str = "china", clock: datetime | None = None) -> None:
         self.column = column if column in self.allowed_columns else "china"
         self.http_get = http_get
+        self.clock = clock or datetime.now(timezone.utc)
 
     def health(self) -> dict[str, Any]:
         return {
@@ -44,6 +47,52 @@ class CctvNewsAdapter(SourceAdapter):
             "column": self.column,
             "notes": "official_media_list_first_screen_discovery",
         }
+
+    def fetch_detail(self, url: str) -> AdapterResult:
+        """有边界详情页补抓：单次 GET、同时提取发布时间与正文、失败不重试。
+
+        文章页为静态 HTML，正文以 HTML 片段存于内嵌脚本变量 ``contentdate``、
+        发布时间存于 ``publishDate``（YYYYMMDDHHMMSS），由 detail_content /
+        detail_time 纯函数解析。由 TimeEnrichment 显式启用，默认搜索路径不调用；
+        验证码/频控即停，任一命中即 SUCCESS，metadata 只带命中的字段。
+        """
+        if self.http_get is None:
+            return AdapterResult(
+                status=SourceStatus.SOURCE_UNAVAILABLE,
+                error_code=SourceErrorCode.SOURCE_UNAVAILABLE,
+                message="CCTV news HTTP transport is not configured",
+                retryable=False,
+            )
+        try:
+            response = self.http_get(url, timeout=10)
+            status_code = getattr(response, "status_code", None)
+            if status_code is not None:
+                if status_code == 429:
+                    return AdapterResult(status=SourceStatus.RATE_LIMITED, error_code=SourceErrorCode.RATE_LIMITED, message="CCTV news detail request was rate limited", retryable=False)
+                if status_code in {401, 403}:
+                    return AdapterResult(status=SourceStatus.AUTHENTICATION_REQUIRED, error_code=SourceErrorCode.AUTH_REQUIRED, message="CCTV news rejected the detail request", retryable=False)
+                if status_code >= 400:
+                    return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.INVALID_RESPONSE, message=f"CCTV news detail returned HTTP {status_code}", retryable=False)
+            content = getattr(response, "content", None)
+            page = content.decode("utf-8", errors="replace") if isinstance(content, (bytes, bytearray)) else str(getattr(response, "text", content))
+        except TimeoutError:
+            return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.NETWORK_TIMEOUT, message="CCTV news detail request timed out", retryable=False)
+        except Exception as exc:
+            return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.INVALID_RESPONSE, message=f"CCTV news detail request failed: {type(exc).__name__}", retryable=False)
+        detail_time = parse_detail_time(page, clock=self.clock)
+        detail_content = parse_detail_content(page)
+        if detail_time is None and detail_content is None:
+            return AdapterResult(status=SourceStatus.EMPTY, message="detail page exposes no publish time or content signal")
+        metadata: dict[str, Any] = {}
+        if detail_time is not None:
+            metadata.update({
+                "publishedAt": detail_time.iso,
+                "publishedAtConfidence": detail_time.confidence,
+                "detectedBy": detail_time.detected_by,
+            })
+        if detail_content is not None:
+            metadata.update({"content": detail_content.text, "contentDetectedBy": detail_content.detected_by})
+        return AdapterResult(status=SourceStatus.SUCCESS, response_metadata=metadata)
 
     def search(self, request: ContentSearchRequest) -> AdapterResult:
         if self.http_get is None:

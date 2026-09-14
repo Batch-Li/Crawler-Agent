@@ -37,6 +37,9 @@ _META_EXPRESSIONS = (
     '//meta[@name="publication_date"]/@content',
     '//meta[@itemprop="datePublished"]/@content',
 )
+# 央视网 2026 版详情页契约：var publishDate = "20260913112937 "（紧凑 YYYYMMDDHHMMSS，
+# 引号内可带尾随空格）。平台原生结构化时间，置信等同 meta。
+_COMPACT_PUBLISH_DATE = re.compile(r"publishDate\s*=\s*[\"']?(20\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})")
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,11 @@ def parse_detail_time(page: str, *, clock: datetime) -> DetailTime | None:
             parsed = _to_iso(value, clock)
             if parsed:
                 return DetailTime(parsed, 1.0, "meta")
+    compact = _COMPACT_PUBLISH_DATE.search(page)
+    if compact:
+        parsed = _to_iso("-".join(compact.groups()[:3]) + " " + ":".join(compact.groups()[3:]), clock)
+        if parsed:
+            return DetailTime(parsed, 1.0, "embedded_variable")
     for value in _visible_dates(tree):
         parsed = _to_iso(value, clock)
         if parsed:

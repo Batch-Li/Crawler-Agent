@@ -107,10 +107,11 @@ python -m agent.crawler_cli discover --live --industry "目标行业" --keyword 
 | 参数 | 作用 |
 |---|---|
 | `--enrich-time` | 对缺时间或低置信的证据补抓一次详情页提取发布时间；每次运行 ≤5 条、不重试，验证码即停。当前仅南方周末支持详情补抓；头条搜索结果指向外部站点，不参与 |
+| `--enrich-content` | 对缺正文条目补抓详情页提取全文并回填（与 `--enrich-time` 共享同一次 GET 与 ≤5 条/轮预算）。南方周末支持（正文随详情页可得）；央视网支持（正文存于页面内嵌变量，发布时间精确到秒）；头条/搜狗微信不参与 |
 | `--time-fallback` | 模型没给时间锚点时，从证据原文里的显式日期（两级中证据更强）或高置信发布时间戳保守落地事件日期；所有兜底结果都标注"待人工复核"，`timeline.md` 的待核实清单会列出 |
 | `--push-capture-queue` | 运行结束后把已执行与未完成的查询原文推入爬虫服务捕获队列；在 `http://127.0.0.1:8301/capture` 点开对应小红书/抖音搜索扫一眼，浏览器助手自动入库；下一轮运行对同一主题追加 `--platform xiaohongshu --platform douyin` 即消费捕获数据（可与南周/头条混用） |
 
-`--time-fallback` 对 `monitor` 入口同样生效。`--enrich-time` 需要 `crawler_tool` 服务端支持详情补抓（本仓库版本已内置）；开启 Wayback 兜底见采集服务说明。三个开关不影响默认行为，旧结果文件兼容。
+`--time-fallback` 对 `monitor` 入口同样生效。`--enrich-time` / `--enrich-content` 需要 `crawler_tool` 服务端支持详情补抓（本仓库版本已内置）；开启 Wayback 兜底见采集服务说明。三个开关不影响默认行为，旧结果文件兼容。
 
 ## 3. 追踪已有事件
 

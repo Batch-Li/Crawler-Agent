@@ -42,9 +42,10 @@ class ContentSearchRequest(BaseModel):
     freshness: Literal["cache_only", "prefer_cached", "prefer_fresh"] = "prefer_cached"
     include_content: bool = False
     cursor: str | None = Field(default=None, min_length=1, max_length=4096)
-    # 有边界详情页时间补全：显式启用；不参与 cursor 请求指纹（pagination.request_fingerprint），
-    # 对既有分页令牌零影响。
+    # 有边界详情页补抓：显式启用；不参与 cursor 请求指纹（pagination.request_fingerprint），
+    # 对既有分页令牌零影响。enrichContent 与 enrichTime 共享同一次详情 GET 与每轮预算。
     enrich_time: bool = Field(default=False, alias="enrichTime")
+    enrich_content: bool = Field(default=False, alias="enrichContent")
 
 
 class FreshCollectionRequest(ContentSearchRequest):

@@ -96,7 +96,8 @@ GET  /api/v1/tool/capture-status
 搜索：
 POST /api/v1/tool/search-content          # 统一搜索；显式 wechat/xiaohongshu/douyin
                                           # 时改读本会话历史；body 加 "enrichTime":true
-                                          # 启用详情页时间补全（≤5 条，仅南周）
+                                          # 或 "enrichContent":true 启用详情页补全
+                                          # （一次 GET 同时取时间与正文，共享 ≤5 条/轮预算；南周/央视支持）
 POST /api/v1/tool/search-wechat-articles  # 微信关键词实时检索（当前 200013 受限）
 
 捕获队列（服务端持久化 data/capture_queue.json）：

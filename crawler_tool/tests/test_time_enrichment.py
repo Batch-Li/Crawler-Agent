@@ -188,3 +188,72 @@ def test_balanced_truncate_interleaves_platforms():
     # 限额内不截断
     assert _balanced_truncate(items[:3], 6) == items[:3]
     assert deque is not None
+
+
+# --- 正文补抓（enrichContent）---
+
+
+def _content_success(text: str, detected_by: str = "embedded_variable") -> AdapterResult:
+    return AdapterResult(status=SourceStatus.SUCCESS, response_metadata={
+        "content": text, "contentDetectedBy": detected_by,
+    })
+
+
+def test_enrich_content_applies_full_content():
+    adapter = FakeDetailAdapter([_content_success("全文正文，事实细节充分。" * 10)])
+    items = [_item("https://www.infzm.com/contents/1")]
+    service, _ = _service(adapter)
+    result, fetches = service.time_enrichment.enrich(items, include_content=True)
+    assert fetches == 1
+    assert result[0].content is not None and "全文正文" in result[0].content
+    assert result[0].quality.has_full_content is True
+    assert "content_from_detail" in result[0].quality.warnings
+    assert result[0].ext["detailContentFetched"] is True
+    assert result[0].ext["detailContentDetectedBy"] == "embedded_variable"
+    # metadata 无时间字段时不造时间
+    assert result[0].published_at is None
+
+
+def test_enrich_without_content_flag_leaves_content_alone():
+    adapter = FakeDetailAdapter([AdapterResult(status=SourceStatus.SUCCESS, response_metadata={
+        "publishedAt": "2026-08-20T01:15:00+00:00", "publishedAtConfidence": 1.0,
+        "detectedBy": "json_ld", "content": "这段全文不应被应用。"})])
+    items = [_item("https://www.infzm.com/contents/1")]
+    service, _ = _service(adapter)
+    result, _ = service.time_enrichment.enrich(items)
+    assert result[0].published_at is not None
+    assert result[0].content is None
+    assert "content_from_detail" not in result[0].quality.warnings
+
+
+def test_enrich_applies_time_and_content_from_same_fetch():
+    adapter = FakeDetailAdapter([AdapterResult(status=SourceStatus.SUCCESS, response_metadata={
+        "publishedAt": "2026-08-20T01:15:00+00:00", "publishedAtConfidence": 1.0,
+        "detectedBy": "json_ld", "content": "一次请求同时命中的全文。",
+        "contentDetectedBy": "visible_article"})])
+    items = [_item("https://www.infzm.com/contents/1")]
+    service, _ = _service(adapter)
+    result, fetches = service.time_enrichment.enrich(items, include_content=True)
+    assert fetches == 1
+    assert result[0].published_at is not None and result[0].content is not None
+    assert result[0].ext["detailTimeFetched"] is True
+    assert result[0].ext["detailContentFetched"] is True
+
+
+def test_content_and_time_share_budget():
+    adapter = FakeDetailAdapter([])
+    items = [_item(f"https://www.infzm.com/contents/{i}") for i in range(3)]
+    service, adapter = _service(adapter)
+    service.time_enrichment.max_fetches = 1
+    _, fetches = service.time_enrichment.enrich(items, include_content=True)
+    assert fetches == 1
+    assert len(adapter.detail_urls) == 1
+
+
+def test_content_missing_marks_warning_on_failure():
+    adapter = FakeDetailAdapter([AdapterResult(status=SourceStatus.EMPTY)])
+    items = [_item("https://www.infzm.com/contents/1")]
+    service, _ = _service(adapter)
+    result, _ = service.time_enrichment.enrich(items, include_content=True)
+    assert "detail_fetch_failed" in result[0].quality.warnings
+    assert "content_missing_from_detail" in result[0].quality.warnings

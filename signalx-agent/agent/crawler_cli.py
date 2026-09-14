@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     discovery.add_argument("--entities-file", type=Path, help="主体别名表，默认读取同级 crawler_tool 配置")
     discovery.add_argument("--enrich-time", action="store_true",
                            help="对缺时间条目做有边界详情页补抓（每次运行 ≤5 条，仅提取发布时间）")
+    discovery.add_argument("--enrich-content", action="store_true",
+                           help="对缺正文条目做有边界详情页补抓（与 --enrich-time 共享预算与请求，南周/央视支持）")
     discovery.add_argument("--push-capture-queue", action="store_true",
                            help="运行后把已执行与未完成查询推送到捕获队列，供小红书/抖音人工捕获闭环")
     monitor = commands.add_parser("monitor", help="只执行一次采集、监测、告警扩展")
@@ -89,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             workflow = build_crawler_workflow(
                 DeepSeekLLM(), base_url=args.base_url, platforms=args.platform, entities_file=args.entities_file,
-                enrich_time=args.enrich_time,
+                enrich_time=args.enrich_time, enrich_content=args.enrich_content,
             )
             args.output_dir.mkdir(parents=True, exist_ok=False)
             result = workflow.run(request)

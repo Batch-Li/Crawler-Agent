@@ -104,3 +104,19 @@ def test_embedded_script_multiple_dates_are_refused():
         "</body></html>"
     )
     assert parse_detail_time(page, clock=CLOCK) is None
+
+
+def test_compact_publish_date_variable_cctv():
+    """央视网 2026 版契约：var publishDate = "20260913112937 "（含尾随空格）。"""
+    page = '<html><script>var publishDate = "20260913112937 ";</script></html>'
+    detail = parse_detail_time(page, clock=CLOCK.replace(year=2027))
+    assert detail is not None
+    # 11:29:37 北京时间 → 03:29:37 UTC
+    assert detail.iso == "2026-09-13T03:29:37+00:00"
+    assert detail.confidence == 1.0
+    assert detail.detected_by == "embedded_variable"
+
+
+def test_compact_publish_date_invalid_month_falls_through():
+    page = '<html><script>var publishDate = "20261313112937";</script></html>'
+    assert parse_detail_time(page, clock=CLOCK.replace(year=2027)) is None

@@ -1,4 +1,5 @@
 import pathlib
+from datetime import datetime, timezone
 
 import pytest
 
@@ -233,3 +234,38 @@ def test_make_service_wires_cctv_as_explicit_only(monkeypatch):
 def _stable_env(monkeypatch):
     monkeypatch.setenv("SOGOU_WECHAT_MODE", "disabled")
     yield
+
+
+# --- 详情页补抓（时间 + 正文，一次 GET）---
+
+
+def test_cctv_detail_extracts_time_and_content_from_embedded_vars():
+    page = (ROOT / "cctv_contents_detail.html").read_bytes()
+    adapter = CctvNewsAdapter(
+        lambda url, timeout: FakeResponse(text=page.decode("utf-8")),
+        clock=datetime(2027, 9, 6, tzinfo=timezone.utc),
+    )
+    result = adapter.fetch_detail("https://news.cctv.com/2026/09/12/ARTIT8plRHM1H7J4M5bpgjHo260912.shtml")
+    assert result.status.value == "success"
+    assert result.response_metadata["publishedAt"] == "2026-09-13T03:29:37+00:00"
+    assert result.response_metadata["detectedBy"] == "embedded_variable"
+    assert "文旅新动能" in result.response_metadata["content"]
+    assert result.response_metadata["contentDetectedBy"] == "embedded_variable"
+
+
+def test_cctv_detail_rate_limited_stops():
+    adapter = CctvNewsAdapter(lambda url, timeout: FakeResponse(text="", status_code=429))
+    result = adapter.fetch_detail("https://news.cctv.com/2026/09/12/ARTIx.shtml")
+    assert result.status.value == "rate_limited"
+    assert result.retryable is False
+
+
+def test_cctv_detail_requires_transport():
+    result = CctvNewsAdapter().fetch_detail("https://news.cctv.com/2026/09/12/ARTIx.shtml")
+    assert result.status.value == "source_unavailable"
+
+
+def test_cctv_detail_no_signal_is_empty():
+    adapter = CctvNewsAdapter(lambda url, timeout: FakeResponse(text="<html><body>nothing here</body></html>"))
+    result = adapter.fetch_detail("https://news.cctv.com/2026/09/12/ARTIx.shtml")
+    assert result.status.value == "empty"

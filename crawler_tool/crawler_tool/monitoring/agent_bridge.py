@@ -98,13 +98,15 @@ class SearchContentCollectionTool:
         platforms: list[str] | None = None,
         timeout: float = 30.0,
         enrich_time: bool = False,
+        enrich_content: bool = False,
     ) -> None:
         self._search_fn = search_fn
         self._base_url = base_url.rstrip("/")
         self._platforms = platforms
         self._timeout = timeout
-        # 有边界详情页时间补全：随每次 search 请求显式声明，由采集服务侧限预算。
+        # 有边界详情页补全：随每次 search 请求显式声明，由采集服务侧限预算。
         self._enrich_time = enrich_time
+        self._enrich_content = enrich_content
 
     def search(self, request: Any) -> list[dict[str, Any]]:
         return self.search_with_reports(request)["evidence"]
@@ -139,6 +141,8 @@ class SearchContentCollectionTool:
             body["platforms"] = self._platforms
         if self._enrich_time:
             body["enrichTime"] = True
+        if self._enrich_content:
+            body["enrichContent"] = True
         response = httpx.post(
             f"{self._base_url}/api/v1/tool/search-content",
             json=body,

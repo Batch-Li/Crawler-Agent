@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 from lxml import html
 
 from crawler_tool.domain import ContentSearchRequest, SourceErrorCode, SourceStatus
+from crawler_tool.infrastructure.detail_content import parse_detail_content
 from crawler_tool.infrastructure.detail_time import parse_detail_time
 from crawler_tool.sources.base import AdapterResult, RawItem, SourceAdapter
 from crawler_tool.pagination import PageRequest
@@ -19,7 +20,7 @@ class SouthWeekendAdapter(SourceAdapter):
     """South Weekend SSR search adapter with JSON compatibility parsing."""
 
     platform = "south_weekend"
-    adapter_version = "0.2.1-ssr"
+    adapter_version = "0.3.0-ssr"
     base_url = "https://www.infzm.com"
 
     def __init__(self, http_get: Any | None = None, *, clock: datetime | None = None) -> None:
@@ -140,10 +141,11 @@ class SouthWeekendAdapter(SourceAdapter):
         return AdapterResult(items=items, status=SourceStatus.SUCCESS)
 
     def fetch_detail(self, url: str) -> AdapterResult:
-        """有边界详情页时间补抓：单次 GET、仅提取发布时间、不解析正文、失败不重试。
+        """有边界详情页补抓：单次 GET、同时提取发布时间与正文、失败不重试。
 
         与旧项目"详情页循环抓取"的边界：由 TimeEnrichment 显式启用、每轮条目
         数有上限、请求预算计入调用方；验证码/认证页即停。默认搜索路径不调用。
+        时间与正文共用这一次请求；任一命中即 SUCCESS，metadata 只带命中的字段。
         """
         if self.http_get is None:
             return AdapterResult(
@@ -171,16 +173,19 @@ class SouthWeekendAdapter(SourceAdapter):
         if _looks_like_challenge(page):
             return AdapterResult(status=SourceStatus.AUTHENTICATION_REQUIRED, error_code=SourceErrorCode.AUTH_REQUIRED, message="South Weekend returned a login or challenge page on detail", retryable=False)
         detail_time = parse_detail_time(page, clock=self.clock)
-        if detail_time is None:
-            return AdapterResult(status=SourceStatus.EMPTY, message="detail page exposes no publish time signal")
-        return AdapterResult(
-            status=SourceStatus.SUCCESS,
-            response_metadata={
+        detail_content = parse_detail_content(page)
+        if detail_time is None and detail_content is None:
+            return AdapterResult(status=SourceStatus.EMPTY, message="detail page exposes no publish time or content signal")
+        metadata: dict[str, Any] = {}
+        if detail_time is not None:
+            metadata.update({
                 "publishedAt": detail_time.iso,
                 "publishedAtConfidence": detail_time.confidence,
                 "detectedBy": detail_time.detected_by,
-            },
-        )
+            })
+        if detail_content is not None:
+            metadata.update({"content": detail_content.text, "contentDetectedBy": detail_content.detected_by})
+        return AdapterResult(status=SourceStatus.SUCCESS, response_metadata=metadata)
 
     def parse_payload(self, payload: dict[str, Any], *, page_number: int = 1) -> AdapterResult:
         records = payload.get("data", {}).get("list")

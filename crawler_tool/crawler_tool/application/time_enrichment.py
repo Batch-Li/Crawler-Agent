@@ -1,12 +1,12 @@
-"""时间补全：有边界的 best-effort 增强，仅由调用方显式启用。
+"""详情页补全（时间/正文）：有边界的 best-effort 增强，仅由调用方显式启用。
 
 两级 provider：
-1. 详情页补抓（``fetch_detail``，仅提取发布时间）；
+1. 详情页补抓（``fetch_detail``，时间与正文共用同一次 GET）；
 2. Wayback CDX 首次收录时间（默认关闭，``wayback_http_get`` 注入才启用）。
 
 边界（与项目红线一致）：
-- 仅补「缺时间或置信度低于阈值」的条目，按响应顺序最多 max_fetches 条；
-- 每条最多 1 次 GET，不重试；
+- 仅补「缺时间/置信度低」或「缺正文」的条目，按响应顺序最多 max_fetches 条；
+- 每条最多 1 次 GET，不重试；时间与正文共享该预算；
 - 命中验证码/频控页即停该来源，不消耗剩余预算；
 - 失败只加条目级 warning，不写入 SourceReport——partial 判定
   （crawl_service.search）会把任何非 success/empty 来源报告升格为
@@ -30,6 +30,8 @@ from crawler_tool.sources.registry import SourceRegistry
 _DETAIL_WARNING = "published_at_from_detail"
 _FAILURE_WARNING = "detail_fetch_failed"
 _WAYBACK_WARNING = "published_at_from_wayback"
+_CONTENT_WARNING = "content_from_detail"
+_CONTENT_MISSING_WARNING = "content_missing_from_detail"
 # 命中即停的来源状态：对抗/频控信号不因换条目而消失。
 _STOP_PLATFORM_STATUSES = {SourceStatus.AUTHENTICATION_REQUIRED, SourceStatus.RATE_LIMITED}
 # 手动捕获来源（xiaohongshu/douyin/wechat）的条目来自会话历史，
@@ -54,11 +56,16 @@ class TimeEnrichmentService:
         # Wayback 第二级兜底：None = 关闭（默认）。
         self.wayback_http_get = wayback_http_get
 
-    def enrich(self, items: list[ContentItem]) -> tuple[list[ContentItem], int]:
-        """返回 (新条目列表, 实际发出的详情请求数)。无候选时原样返回、零请求。"""
+    def enrich(self, items: list[ContentItem], *, include_content: bool = False) -> tuple[list[ContentItem], int]:
+        """返回 (新条目列表, 实际发出的详情请求数)。无候选时原样返回、零请求。
+
+        include_content：同时为缺正文条目补全文；时间与正文共享每条 1 次 GET
+        与全局 max_fetches 预算。缺省 False 时行为与旧版逐字节一致。
+        """
         candidates = [
             index for index, item in enumerate(items)
-            if item.platform not in self.skip_platforms and self._needs_time(item)
+            if item.platform not in self.skip_platforms
+            and (self._needs_time(item) or (include_content and self._needs_content(item)))
         ]
         if not candidates:
             return items, 0
@@ -81,11 +88,13 @@ class TimeEnrichmentService:
                         break
                     fetches += 1
                     metadata = outcome.response_metadata if isinstance(outcome.response_metadata, dict) else {}
-                    published_at = metadata.get("publishedAt")
-                    if outcome.status is SourceStatus.SUCCESS and published_at:
-                        result[index] = self._apply(item, metadata)
-                        continue
-                    result[index] = self._mark_failed(item)
+                    if outcome.status is SourceStatus.SUCCESS:
+                        wants_time = self._needs_time(item)
+                        wants_content = include_content and self._needs_content(item)
+                        if (wants_time and metadata.get("publishedAt")) or (wants_content and metadata.get("content")):
+                            result[index] = self._apply(item, metadata, wants_time, wants_content)
+                            continue
+                    result[index] = self._mark_failed(item, include_content)
                     if outcome.status in _STOP_PLATFORM_STATUSES:
                         break
             finally:
@@ -111,19 +120,33 @@ class TimeEnrichmentService:
     def _needs_time(self, item: ContentItem) -> bool:
         return item.published_at is None or item.quality.published_at_confidence < self.confidence_threshold
 
-    def _apply(self, item: ContentItem, metadata: dict) -> ContentItem:
-        published_at = datetime.fromisoformat(str(metadata["publishedAt"]))
-        confidence = float(metadata.get("publishedAtConfidence", 0.85))
-        detected_by = str(metadata.get("detectedBy", "detail"))
-        quality = item.quality.model_copy(update={
-            "published_at_confidence": confidence,
-            "warnings": list(dict.fromkeys([*item.quality.warnings, _DETAIL_WARNING])),
-        })
-        ext = {**item.ext, "detailTimeFetched": True, "detailTimeDetectedBy": detected_by}
-        return item.model_copy(update={"published_at": published_at, "quality": quality, "ext": ext})
+    def _needs_content(self, item: ContentItem) -> bool:
+        return item.content is None or not item.quality.has_full_content
 
-    def _mark_failed(self, item: ContentItem) -> ContentItem:
+    def _apply(self, item: ContentItem, metadata: dict, wants_time: bool = True, wants_content: bool = False) -> ContentItem:
+        quality_update: dict[str, Any] = {"warnings": list(item.quality.warnings)}
+        ext = dict(item.ext)
+        if wants_time and metadata.get("publishedAt"):
+            published_at = datetime.fromisoformat(str(metadata["publishedAt"]))
+            quality_update["published_at_confidence"] = float(metadata.get("publishedAtConfidence", 0.85))
+            quality_update["warnings"] = list(dict.fromkeys([*quality_update["warnings"], _DETAIL_WARNING]))
+            ext["detailTimeFetched"] = True
+            ext["detailTimeDetectedBy"] = str(metadata.get("detectedBy", "detail"))
+            item = item.model_copy(update={"published_at": published_at})
+        if wants_content and metadata.get("content"):
+            quality_update["has_full_content"] = True
+            quality_update["warnings"] = list(dict.fromkeys([*quality_update["warnings"], _CONTENT_WARNING]))
+            ext["detailContentFetched"] = True
+            ext["detailContentDetectedBy"] = str(metadata.get("contentDetectedBy", "detail"))
+            item = item.model_copy(update={"content": str(metadata["content"])})
+        return item.model_copy(update={
+            "quality": item.quality.model_copy(update=quality_update), "ext": ext,
+        })
+
+    def _mark_failed(self, item: ContentItem, include_content: bool = False) -> ContentItem:
         warnings = list(dict.fromkeys([*item.quality.warnings, _FAILURE_WARNING]))
+        if include_content and self._needs_content(item):
+            warnings = list(dict.fromkeys([*warnings, _CONTENT_MISSING_WARNING]))
         return item.model_copy(update={"quality": item.quality.model_copy(update={"warnings": warnings})})
 
     def _apply_wayback(self, item: ContentItem, iso: str) -> ContentItem:

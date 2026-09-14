@@ -291,10 +291,10 @@ class CrawlService:
             finally:
                 if adapter is not None:
                     adapter.close()
-        # 详情页时间补全：只作用于本次响应（截断后）的条目，失败不进 SourceReport。
+        # 详情页补全（时间/正文）：只作用于本次响应（截断后）的条目，失败不进 SourceReport。
         final_items = _balanced_truncate(items, request.limit)
-        if request.enrich_time and final_items:
-            final_items, _ = self.time_enrichment.enrich(final_items)
+        if (request.enrich_time or request.enrich_content) and final_items:
+            final_items, _ = self.time_enrichment.enrich(final_items, include_content=request.enrich_content)
             self.recent_store.add(final_items)
         failed = any(report.status not in {SourceStatus.SUCCESS.value, SourceStatus.EMPTY.value} for report in reports)
         return ContentSearchResponse(

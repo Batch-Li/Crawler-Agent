@@ -100,12 +100,13 @@ def load_entity_aliases(entities_file: str | Path | None = None) -> dict[str, st
 def build_crawler_workflow(llm: StructuredLLM, *, base_url: str = "http://127.0.0.1:8301",
                            platforms: list[str] | None = None,
                            entities_file: str | Path | None = None,
-                           enrich_time: bool = False) -> EventDiscoveryWorkflow:
+                           enrich_time: bool = False,
+                           enrich_content: bool = False) -> EventDiscoveryWorkflow:
     from crawler_tool.monitoring import SearchContentCollectionTool
 
     return EventDiscoveryWorkflow(
         collector=CrawlerCollectionTool(SearchContentCollectionTool(
-            base_url=base_url, platforms=platforms, enrich_time=enrich_time,
+            base_url=base_url, platforms=platforms, enrich_time=enrich_time, enrich_content=enrich_content,
         )),
         processor=SignalXEventProcessor.from_llm(llm, entity_aliases=load_entity_aliases(entities_file)),
         planner=LLMQueryPlanner(llm, max_queries_per_round=2),
