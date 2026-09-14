@@ -57,6 +57,7 @@ class SignalXEventProcessor:
         self, evidence: list[Evidence], *,
         previous: EventProcessingResult | None = None,
         industry: str | None = None,
+        time_fallback: bool = False,
     ) -> EventProcessingResult:
         """只抽取增量证据；复核、分类及串联全部成功后提交完整快照。"""
         previous = previous or EventProcessingResult()
@@ -68,7 +69,8 @@ class SignalXEventProcessor:
             events = self.extractor.invoke(EventExtractionRequest(
                 evidence=evidence, industry=industry, existing_events=events,
             )).events
-        events = [ground_event_time(self.entity_resolver.normalize(event)) for event in events]
+        events = [ground_event_time(self.entity_resolver.normalize(event), allow_fallback=time_fallback)
+                  for event in events]
         if self.merger:
             events = self.merger.invoke(events)
         previous_by_id = {item.event_id: item for item in previous.events}

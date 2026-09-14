@@ -43,6 +43,8 @@ class WorkflowRequest(SchemaModel):
     per_round_query_limit: int = Field(default=5, ge=1, le=50)
     per_query_limit: int = Field(default=20, ge=1, le=100)
     max_no_progress_rounds: int = Field(default=1, ge=1, le=10)
+    # 无模型时间锚点时的证据级时间兜底；默认关，旧结果 JSON 缺该字段即保持原行为。
+    time_fallback: bool = False
 
     @model_validator(mode="after")
     def validate_mode_input(self) -> "WorkflowRequest":
@@ -268,6 +270,8 @@ class WorkflowResult(SchemaModel):
     stop_message: str = ""
     unlinked_event_ids: list[str] = Field(default_factory=list)
     chain_unresolved_questions: list[str] = Field(default_factory=list)
+    # 与请求同名开关回传，timeline 重渲染时按同一语义重新落地时间。
+    time_fallback: bool = False
 
 
 def _unique_non_empty(values: list[str]) -> list[str]:

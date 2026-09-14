@@ -192,7 +192,7 @@ class CrawlerIntegrationTests(unittest.TestCase):
             self.assertEqual(summary["agentTrigger"]["failed"], 0)
             saved = list((root / "mon/discoveries").glob("*.json"))
             self.assertEqual(len(saved), 1)
-            payload = json.loads(saved[0].read_text())
+            payload = json.loads(saved[0].read_text(encoding="utf-8"))
             self.assertEqual(payload["executionStatus"], "completed")
             self.assertEqual(payload["result"]["events"][0]["eventId"], payload["alertId"])
             self.assertEqual(run_scheduled_tick(**options)["agentTrigger"]["dispatched"], 0)
@@ -237,6 +237,107 @@ class CrawlerIntegrationTests(unittest.TestCase):
                 before = output.read_bytes()
                 self.assertEqual(main(args), 2)
                 self.assertEqual(output.read_bytes(), before)
+
+
+@unittest.skipUnless(importlib.util.find_spec("crawler_tool"), "需安装 ../crawler_tool[dev]")
+class CaptureQueuePushTests(unittest.TestCase):
+    """--push-capture-queue：查询提取、推送摘要、失败不炸退出码。"""
+
+    def workflow(self, payload):
+        from crawler_tool.monitoring import SearchContentCollectionTool
+
+        llm = FixtureLLM()
+        return EventDiscoveryWorkflow(
+            CrawlerCollectionTool(SearchContentCollectionTool(search_fn=lambda q, limit: payload)),
+            SignalXEventProcessor.from_llm(llm), LLMQueryPlanner(llm),
+        )
+
+    def test_collects_executed_and_pending_queries_deduped(self):
+        from agent.crawler_cli import _capture_queue_queries
+
+        result = WorkflowResult.model_validate({
+            "mode": "BULK_DISCOVERY", "industry": "测试",
+            "evidence": [], "events": [], "classifications": [], "chains": [],
+            "rounds": [
+                {"roundIndex": 1, "planReason": "初始", "newEvidenceCount": 1, "totalEvidenceCount": 1,
+                 "eventCount": 0, "chainCount": 0,
+                 "toolCalls": [
+                    {"query": "大模型 发布", "success": True, "resultCount": 1},
+                    {"query": "AI 客服", "success": False, "status": "failed"},
+                ]},
+                {"roundIndex": 2, "planReason": "后续", "newEvidenceCount": 0, "totalEvidenceCount": 1,
+                 "eventCount": 0, "chainCount": 0,
+                 "toolCalls": []},
+            ],
+            "pendingQueries": ["大模型 发布", "大模型 融资"],
+            "stopReason": "MAX_ROUNDS",
+        })
+        queries = _capture_queue_queries(result)
+        # 已执行查询原文在前（保序去重），未完成查询补后
+        self.assertEqual(queries, ["大模型 发布", "AI 客服", "大模型 融资"])
+
+    def test_push_reports_error_without_raising(self):
+        from agent.crawler_cli import push_capture_queue
+
+        summary = push_capture_queue(base_url="http://127.0.0.1:9", queries=["测试词"])
+        self.assertIn("captureQueueError", summary)
+        self.assertEqual(push_capture_queue(base_url="http://127.0.0.1:8301", queries=[]), {})
+
+    def test_discover_with_flag_posts_to_queue(self):
+        from agent.crawler_cli import main
+
+        captured = {}
+
+        class FakeResponse:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"added": 2, "count": 2}
+
+        def fake_post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["body"] = json
+            return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            workflow = self.workflow({"items": [item()]})
+            with patch("agent.crawler_cli.DeepSeekLLM", return_value=FixtureLLM()), \
+                 patch("agent.crawler_cli.build_crawler_workflow", return_value=workflow), \
+                 patch("agent.crawler_cli.httpx.post", side_effect=fake_post):
+                args = ["discover", "--live", "--industry", "智能手机", "--keyword", "新品",
+                        "--push-capture-queue",
+                        "--output-dir", str(Path(tmp) / "run")]
+                self.assertEqual(main(args), 0)
+        self.assertTrue(captured["url"].endswith("/api/v1/tool/capture-queue"))
+        self.assertEqual(captured["body"]["source"], "agent")
+        self.assertIn("新品", captured["body"]["keywords"])
+
+
+class TimeConfidenceContractTests(unittest.TestCase):
+    """bridge 与 Evidence（extra="forbid"）的字段契约：置信度与原始串必须可校验。"""
+
+    def test_item_to_evidence_confidence_survives_evidence_validation(self):
+        from crawler_tool.monitoring.agent_bridge import item_to_evidence
+
+        bridged = item_to_evidence({
+            "contentId": "cid_9", "title": "标题", "platform": "toutiao",
+            "url": "https://example.com/9", "publishedAt": "2026-08-23T02:20:00+00:00",
+            "summary": "摘要", "dedupKey": "k9",
+            "quality": {"warnings": ["published_at_time_missing"], "publishedAtConfidence": 0.85},
+            "ext": {"publishedAtRaw": "2026-08-23"},
+        })
+        evidence = Evidence.model_validate(bridged)
+        self.assertEqual(evidence.published_at_confidence, 0.85)
+        self.assertEqual(evidence.published_at_raw, "2026-08-23")
+        self.assertIsNotNone(evidence.published_at)
+
+    def test_legacy_evidence_without_new_fields_still_validates(self):
+        evidence = Evidence.model_validate({
+            "evidenceId": "e1", "title": "旧证据", "source": "south_weekend",
+        })
+        self.assertIsNone(evidence.published_at_confidence)
+        self.assertIsNone(evidence.published_at_raw)
 
 
 if __name__ == "__main__":

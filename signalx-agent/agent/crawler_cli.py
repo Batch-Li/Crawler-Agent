@@ -6,12 +6,37 @@ import argparse
 import json
 from pathlib import Path
 
+import httpx
+
 from .crawler_integration import WorkflowDiscoveryRunner, build_crawler_workflow
 from .llm import DeepSeekLLM
 from .models import Event
 from .workflow_models import StopReason, WorkflowRequest
 from .workflow_models import WorkflowResult
 from .timeline import write_timeline
+
+
+def _capture_queue_queries(result: WorkflowResult) -> list[str]:
+    """已执行查询原文 + 未完成查询；推原文保证捕获回来后子串匹配能命中。"""
+    queries = [call.query for record in result.rounds for call in record.tool_calls]
+    queries.extend(result.pending_queries)
+    return list(dict.fromkeys(queries))
+
+
+def push_capture_queue(*, base_url: str, queries: list[str]) -> dict[str, object]:
+    """推送失败只记录在返回值里，不影响运行退出码，也不重试。"""
+    if not queries:
+        return {}
+    try:
+        response = httpx.post(
+            f"{base_url.rstrip('/')}/api/v1/tool/capture-queue",
+            json={"keywords": queries, "source": "agent"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return {"captureQueuePushed": response.json().get("added", 0)}
+    except Exception as exc:
+        return {"captureQueueError": f"{type(exc).__name__}: {exc}"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
     discovery.add_argument("--max-rounds", type=int, default=3)
     discovery.add_argument("--max-tool-calls", type=int, default=6)
     discovery.add_argument("--entities-file", type=Path, help="主体别名表，默认读取同级 crawler_tool 配置")
+    discovery.add_argument("--enrich-time", action="store_true",
+                           help="对缺时间条目做有边界详情页补抓（每次运行 ≤5 条，仅提取发布时间）")
+    discovery.add_argument("--push-capture-queue", action="store_true",
+                           help="运行后把已执行与未完成查询推送到捕获队列，供小红书/抖音人工捕获闭环")
     monitor = commands.add_parser("monitor", help="只执行一次采集、监测、告警扩展")
     monitor.add_argument("--config-dir", type=Path, required=True)
     monitor.add_argument("--data-dir", type=Path, required=True, help="持续使用的监测状态目录")
@@ -38,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--max-llm-calls", type=int, default=24, help="每次发现循环上限")
         command.add_argument("--limit", type=int, default=20)
         command.add_argument("--max-no-progress-rounds", type=int, default=1)
+        command.add_argument("--time-fallback", action="store_true",
+                             help="模型没给时间锚点时，从证据原文日期/高置信发布时间保守落地事件日期（全部标注待人工复核）")
     args = parser.parse_args(argv)
     try:
         # 共用模型校验，错误参数在采集和状态写入之前拒绝。
@@ -54,9 +85,11 @@ def main(argv: list[str] | None = None) -> int:
                 max_rounds=args.max_rounds, max_tool_calls=args.max_tool_calls,
                 max_llm_calls=limits.max_llm_calls, per_query_limit=limits.per_query_limit,
                 max_no_progress_rounds=limits.max_no_progress_rounds,
+                time_fallback=args.time_fallback,
             )
             workflow = build_crawler_workflow(
                 DeepSeekLLM(), base_url=args.base_url, platforms=args.platform, entities_file=args.entities_file,
+                enrich_time=args.enrich_time,
             )
             args.output_dir.mkdir(parents=True, exist_ok=False)
             result = workflow.run(request)
@@ -64,8 +97,15 @@ def main(argv: list[str] | None = None) -> int:
                 result.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8",
             )
             write_timeline(result, args.output_dir / "timeline.md")
-            print(json.dumps({"stopReason": result.stop_reason.value, "events": len(result.events),
-                              "outputDirectory": str(args.output_dir.resolve())}, ensure_ascii=False))
+            summary: dict[str, object] = {
+                "stopReason": result.stop_reason.value, "events": len(result.events),
+                "outputDirectory": str(args.output_dir.resolve()),
+            }
+            if args.push_capture_queue:
+                summary.update(push_capture_queue(
+                    base_url=args.base_url, queries=_capture_queue_queries(result),
+                ))
+            print(json.dumps(summary, ensure_ascii=False))
             return 0 if result.stop_reason == StopReason.COMPLETED else 2
 
         from crawler_tool.monitoring.scheduled_tick import load_query_plan, run_scheduled_tick
@@ -82,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             workflow, industry=args.industry, max_llm_calls=limits.max_llm_calls,
             per_query_limit=limits.per_query_limit,
             max_no_progress_rounds=limits.max_no_progress_rounds,
+            time_fallback=args.time_fallback,
         )
         prior_outputs = set((args.data_dir / "discoveries").glob("*.json"))
         summary = run_scheduled_tick(

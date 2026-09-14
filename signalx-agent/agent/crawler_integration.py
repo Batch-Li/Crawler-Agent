@@ -54,12 +54,14 @@ class WorkflowDiscoveryRunner:
     """注入 AgentTrigger；行业显式指定，每次告警都有独立模型预算。"""
 
     def __init__(self, workflow: EventDiscoveryWorkflow, *, industry: str,
-                 max_llm_calls: int = 24, per_query_limit: int = 20, max_no_progress_rounds: int = 1):
+                 max_llm_calls: int = 24, per_query_limit: int = 20, max_no_progress_rounds: int = 1,
+                 time_fallback: bool = False):
         self.workflow = workflow
         self.industry = industry
         self.max_llm_calls = max_llm_calls
         self.per_query_limit = per_query_limit
         self.max_no_progress_rounds = max_no_progress_rounds
+        self.time_fallback = time_fallback
 
     def run(self, seed_event: dict, budget: dict[str, int]) -> dict:
         request = WorkflowRequest(
@@ -69,6 +71,7 @@ class WorkflowDiscoveryRunner:
             max_llm_calls=min(self.max_llm_calls, budget.get("maxLlmCalls", self.max_llm_calls)),
             per_query_limit=self.per_query_limit,
             max_no_progress_rounds=self.max_no_progress_rounds,
+            time_fallback=self.time_fallback,
         )
         return self.workflow.run(request).model_dump(mode="json", by_alias=True)
 
@@ -96,12 +99,13 @@ def load_entity_aliases(entities_file: str | Path | None = None) -> dict[str, st
 
 def build_crawler_workflow(llm: StructuredLLM, *, base_url: str = "http://127.0.0.1:8301",
                            platforms: list[str] | None = None,
-                           entities_file: str | Path | None = None) -> EventDiscoveryWorkflow:
+                           entities_file: str | Path | None = None,
+                           enrich_time: bool = False) -> EventDiscoveryWorkflow:
     from crawler_tool.monitoring import SearchContentCollectionTool
 
     return EventDiscoveryWorkflow(
         collector=CrawlerCollectionTool(SearchContentCollectionTool(
-            base_url=base_url, platforms=platforms,
+            base_url=base_url, platforms=platforms, enrich_time=enrich_time,
         )),
         processor=SignalXEventProcessor.from_llm(llm, entity_aliases=load_entity_aliases(entities_file)),
         planner=LLMQueryPlanner(llm, max_queries_per_round=2),

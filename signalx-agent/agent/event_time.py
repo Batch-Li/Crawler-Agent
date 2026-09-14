@@ -46,8 +46,13 @@ def refresh_event_evidence(event: Event, updates: dict[str, Evidence]) -> Event:
     return refreshed
 
 
-def ground_event_time(event: Event) -> Event:
-    """显式 timeAnchor 优先；旧输出只保守恢复同年月的唯一日期。"""
+def ground_event_time(event: Event, *, allow_fallback: bool = False) -> Event:
+    """显式 timeAnchor 优先；旧输出只保守恢复同年月的唯一日期。
+
+    allow_fallback（默认关）：模型没给任何时间锚点时按证据强度降序兜底两步，
+    落地日期一律带「待人工复核」警告。兜底必须在本函数内实现——timeline
+    渲染会重跑本函数并先清空时间，函数外写入的结果会被渲染抹掉。
+    """
     event = event.model_copy(deep=True)
     attempted = event.event_time
     anchor = event.time_anchor
@@ -78,10 +83,53 @@ def ground_event_time(event: Event) -> Event:
             event.time_warnings = list(dict.fromkeys([
                 *event.time_warnings, '时间引用包含多个日期或时刻，事件时间待核实。',
             ]))
+    elif allow_fallback:
+        event = _fallback_ground_time(event)
     if attempted is not None and event.event_time is None:
         warning = ('仅有日期证据，未保留模型补出的日或时刻。' if event.event_date
                    else '事件时刻缺少明确原文依据，已置空。')
         event.time_warnings = list(dict.fromkeys([*event.time_warnings, warning]))
+    return event
+
+
+def _fallback_ground_time(event: Event) -> Event:
+    """无模型时间锚点时的两阶段保守兜底；任何结果都只是待复核的线索。
+
+    阶段 1（文本锚定）：全部证据的标题/正文/摘要里恰好有一个不同日期值，
+    以命中原文为锚点落日精度日期；多个候选只警告不落地。
+    阶段 2（发布时间戳，仅在阶段 1 无任何候选时）：全部高置信（≥0.85）
+    发布时间的日历日一致才落日精度日期；不设 eventTime、不伪造正文锚点。
+    """
+    candidates: dict[str, tuple[PartialDate, str, str]] = {}
+    for evidence in event.evidence:
+        for text in (evidence.title, evidence.content, evidence.snippet):
+            for partial, quote in _dates(text or ''):
+                candidates.setdefault(partial.value, (partial, evidence.evidence_id, quote))
+    if len(candidates) == 1:
+        partial, evidence_id, quote = next(iter(candidates.values()))
+        event.time_anchor = EvidenceAnchor(evidence_id=evidence_id, quote=quote)
+        event.event_date = partial
+        event.time_warnings = list(dict.fromkeys([
+            *event.time_warnings, '事件日期来自证据原文显式日期（无模型时间锚点），待人工复核。',
+        ]))
+        return event
+    if candidates:
+        event.time_warnings = list(dict.fromkeys([
+            *event.time_warnings, f'时间线索存在 {len(candidates)} 个候选日期，未自动落时间。',
+        ]))
+        return event
+    stamped = [item for item in event.evidence
+               if item.published_at is not None and (item.published_at_confidence or 0) >= 0.85]
+    days = {item.published_at.astimezone(timezone.utc).date() for item in stamped}
+    if len(days) == 1:
+        event.event_date = PartialDate(value=days.pop().isoformat(), precision='day')
+        event.time_warnings = list(dict.fromkeys([
+            *event.time_warnings, '事件日期来自证据发布时间戳（非正文锚点），待人工复核。',
+        ]))
+    elif stamped:
+        event.time_warnings = list(dict.fromkeys([
+            *event.time_warnings, '高置信发布时间互相矛盾，未自动落时间。',
+        ]))
     return event
 
 

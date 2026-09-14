@@ -23,7 +23,8 @@ def date_label(event: Event):
 
 
 def render_timeline(result: WorkflowResult | EventProcessingResult, *, note='') -> str:
-    by_id = {e.event_id: ground_event_time(e) for e in result.events}
+    allow_fallback = bool(getattr(result, 'time_fallback', False))
+    by_id = {e.event_id: ground_event_time(e, allow_fallback=allow_fallback) for e in result.events}
     lines = ['# 事件时间链', '']
     if note:
         lines += [_cell(note), '']

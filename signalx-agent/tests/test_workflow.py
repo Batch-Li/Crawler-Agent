@@ -40,7 +40,7 @@ class FakeProcessor:
     def __init__(self) -> None:
         self.received: list[list[str]] = []
 
-    def process(self, items: list[Evidence], *, previous=None, industry=None) -> EventProcessingResult:
+    def process(self, items: list[Evidence], *, previous=None, industry=None, time_fallback=False) -> EventProcessingResult:
         self.received.append([item.evidence_id for item in items])
         previous = previous or EventProcessingResult()
         old_by_evidence = {

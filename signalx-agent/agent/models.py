@@ -54,6 +54,10 @@ class Evidence(SchemaModel):
     source: str = Field(min_length=1)
     url: str | None = None
     published_at: datetime | None = None
+    # 发布时间置信度与原始串：来自采集侧 ContentItem；旧 evidence 文件缺省即可，
+    # 时间兜底（event_time.ground_event_time）只在高置信时使用。
+    published_at_confidence: Confidence | None = None
+    published_at_raw: str | None = None
     has_full_content: bool | None = None
     source_name: str | None = None
     quality_warnings: list[str] = Field(default_factory=list)

@@ -24,6 +24,7 @@ class EventProcessor(Protocol):
     def process(
         self, evidence: list[Evidence], *,
         previous: EventProcessingResult | None = None, industry: str | None = None,
+        time_fallback: bool = False,
     ) -> EventProcessingResult:
         """输入新增/变更证据及上次快照，返回包含全部已有事件的完整快照。"""
 
@@ -112,6 +113,7 @@ class EventDiscoveryWorkflow:
                 ])),
                 unlinked_event_ids=snapshot.unlinked_event_ids,
                 chain_unresolved_questions=snapshot.chain_unresolved_questions,
+                time_fallback=request.time_fallback,
                 stop_message={
                     StopReason.NO_PROGRESS: "连续查询没有新增或更新的有效证据，停止扩搜；待核实问题仍未解决。",
                     StopReason.COMPLETED: "已按当前查询计划处理完毕；事件链为空不影响正常结束。",
@@ -215,6 +217,7 @@ class EventDiscoveryWorkflow:
                 try:
                     candidate = EventProcessingResult.model_validate(self.processor.process(
                         dirty, previous=snapshot.model_copy(deep=True), industry=request.industry,
+                        time_fallback=request.time_fallback,
                     ))
                     self._validate_snapshot(candidate, snapshot, evidence_by_id)
                     snapshot = candidate
