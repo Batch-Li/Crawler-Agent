@@ -22,7 +22,7 @@ SignalX 统一采集 Tool 与监测层。完整的事件发现、分析和时间
 | 南方周末 `south_weekend` | 真实首屏可用；分页 unverified 不签发 cursor | 默认联搜成员 | ✅ | 无需配置 |
 | 头条 `toutiao` | 首屏可用；分页 fixture 闭环、真实两页未证；时间解析 0.2.0（纯日期/相对时间） | 默认联搜成员 | ✅ | 无需配置 |
 | 央视网 `cctv_news` | 官方栏目列表直读，秒级时间+关键词+稳定 ID，字段质量最高 | 显式指定（灰度） | ✅ | 无需配置 |
-| 微博 `weibo` | 匿名尽力而为（近期 parser_changed 偏多，待修）；可选临时授权 | 必须显式指定 | ✅ | 可选 `WEIBO_MODE`+`WEIBO_SESSION_COOKIE` |
+| 微博 `weibo` | 匿名尽力而为（近期 parser_changed 偏多，待修）；可选临时授权。**匿名属机会性来源，不建议入监测轮换** | 必须显式指定 | 可选 | 可选 `WEIBO_MODE`+`WEIBO_SESSION_COOKIE` |
 | **搜狗微信** `sogou_wechat` | 文章索引发现；包装链接不解析、无正文、验证码即停 | 默认 disabled | 启用后可用 | `SOGOU_WECHAT_MODE=anonymous_best_effort` |
 | 微信 `wechat` | 授权通道受跨号列表 200013 平台限制；数据走手动捕获 | 必须显式指定 | 🔗 经捕获通道 | 授权模式需 `WECHAT_MODE`+`WECHAT_SESSION_COOKIE`；默认停用 |
 | 小红书 `xiaohongshu` | 接口需动态签名（461），网络禁用；走捕获投喂 | 默认 disabled | 🔗 经捕获通道 | `XHS_MODE`+`XHS_SESSION_COOKIE` |
@@ -77,6 +77,8 @@ python -m pytest -q                 # 默认离线，真实验证需另行启用
 ```powershell
 $env:CRAWLER_CURSOR_SECRET="replace-with-a-random-secret"   # 分页 cursor 需要
 python -m crawler_tool.interfaces.app --serve   # 仅绑定 127.0.0.1:8301
+# 可选：--wayback-fallback 启用 Wayback CDX 首次收录时间兜底（默认关；
+# 仅作为详情页补时间的第二级，国内访问 web.archive.org 常不可达，连续失败 2 次即熔断）
 ```
 
 端点全表：
@@ -84,7 +86,7 @@ python -m crawler_tool.interfaces.app --serve   # 仅绑定 127.0.0.1:8301
 ```text
 页面：
 GET  /view                                # 会话视图浏览器页（平台筛选/搜索/导出）
-GET  /capture                             # 捕获任务队列页
+GET  /capture                             # 捕获任务队列页（队列存服务端，agent 可推送）
 
 系统：
 GET  /api/v1/health
@@ -93,8 +95,14 @@ GET  /api/v1/tool/capture-status
 
 搜索：
 POST /api/v1/tool/search-content          # 统一搜索；显式 wechat/xiaohongshu/douyin
-                                          # 时改读本会话历史
+                                          # 时改读本会话历史；body 加 "enrichTime":true
+                                          # 启用详情页时间补全（≤5 条，仅南周）
 POST /api/v1/tool/search-wechat-articles  # 微信关键词实时检索（当前 200013 受限）
+
+捕获队列（服务端持久化 data/capture_queue.json）：
+GET    /api/v1/tool/capture-queue         # 队列列表
+POST   /api/v1/tool/capture-queue         # 追加 {"keywords":[...],"source":"agent|manual"}
+DELETE /api/v1/tool/capture-queue?keyword=词
 
 捕获投喂与视图：
 POST /api/v1/tool/ingest-capture          # 手动捕获投喂（零网络，信封自动探测）
