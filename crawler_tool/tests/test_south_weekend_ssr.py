@@ -41,6 +41,109 @@ def test_south_weekend_ssr_missing_panel_is_parser_changed():
     assert result.status is SourceStatus.PARSER_CHANGED
 
 
-def test_south_weekend_detail_is_explicitly_unsupported_for_now():
+class _DetailResponse:
+    def __init__(self, body: bytes, *, status_code: int = 200):
+        self.content = body
+        self.status_code = status_code
+
+
+def test_south_weekend_detail_extracts_time_by_priority():
+    """JSON-LD > meta > 可见文本；fixture 三处日期互不相同，验证优先级。"""
+    page = (FIXTURES / "infzm_contents_detail.html").read_bytes()
+    result = SouthWeekendAdapter(http_get=lambda url, timeout: _DetailResponse(page)).fetch_detail(
+        "https://www.infzm.com/contents/317022"
+    )
+    assert result.status is SourceStatus.SUCCESS
+    assert result.response_metadata == {
+        "publishedAt": "2026-08-20T01:15:00+00:00",
+        "publishedAtConfidence": 1.0,
+        "detectedBy": "json_ld",
+    }
+
+
+def test_south_weekend_detail_decodes_gb18030_bytes():
+    page = (FIXTURES / "infzm_contents_detail.html").read_text(encoding="utf-8").encode("gb18030")
+    result = SouthWeekendAdapter(http_get=lambda url, timeout: _DetailResponse(page)).fetch_detail(
+        "https://www.infzm.com/contents/317022"
+    )
+    assert result.status is SourceStatus.SUCCESS
+    assert result.response_metadata["publishedAt"] == "2026-08-20T01:15:00+00:00"
+
+
+def test_south_weekend_detail_challenge_stops_without_retry():
+    # 真实站点正文为 GB18030；fixture 同编码模拟，避免 gb18030-first 解码乱码掩盖挑战标记
+    page = (FIXTURES / "infzm_contents_detail_challenge.html").read_text(encoding="utf-8").encode("gb18030")
+    calls = []
+
+    def http_get(url, timeout):
+        calls.append(url)
+        return _DetailResponse(page)
+
+    result = SouthWeekendAdapter(http_get=http_get).fetch_detail("https://www.infzm.com/contents/317022")
+    assert result.status is SourceStatus.AUTHENTICATION_REQUIRED
+    assert result.retryable is False
+    assert calls == ["https://www.infzm.com/contents/317022"]
+
+
+def test_south_weekend_detail_rate_limited_is_not_retried():
+    result = SouthWeekendAdapter(http_get=lambda url, timeout: _DetailResponse(b"", status_code=429)).fetch_detail(
+        "https://www.infzm.com/contents/317022"
+    )
+    assert result.status is SourceStatus.RATE_LIMITED
+    assert result.retryable is False
+
+
+def test_south_weekend_detail_without_transport_is_unavailable():
     result = SouthWeekendAdapter().fetch_detail("https://www.infzm.com/contents/317022")
     assert result.status is SourceStatus.SOURCE_UNAVAILABLE
+    assert result.retryable is False
+
+
+def test_south_weekend_payload_full_iso_keeps_full_confidence():
+    """JSON 路径完整 ISO：置信 1.0，原始串入 ext，无时间警告。"""
+    result = SouthWeekendAdapter().parse_payload({
+        "data": {"list": [{
+            "id": "317022",
+            "url": "317022",
+            "subject": "标题",
+            "publish_time": "2026-08-23T10:20:00+08:00",
+        }]},
+    })
+    payload = result.items[0].payload
+    assert payload["publishedAt"] == "2026-08-23T10:20:00+08:00"
+    assert payload["publishedAtConfidence"] == 1.0
+    assert not [w for w in payload["warnings"] if w.startswith("published_at")]
+    assert payload["ext"]["publishedAtRaw"] == "2026-08-23T10:20:00+08:00"
+
+
+def test_south_weekend_payload_date_only_is_not_overestimated():
+    """JSON 路径日期-only：按北京时间零点落地，置信 0.85，不再被默认 1.0 高估。"""
+    result = SouthWeekendAdapter().parse_payload({
+        "data": {"list": [{
+            "id": "317022",
+            "url": "317022",
+            "subject": "标题",
+            "publish_time": "2026-08-23",
+        }]},
+    })
+    payload = result.items[0].payload
+    assert payload["publishedAt"] == "2026-08-23T00:00:00+08:00"
+    assert payload["publishedAtConfidence"] == 0.85
+    assert "published_at_time_missing" in payload["warnings"]
+
+
+def test_south_weekend_payload_unparseable_time_stays_empty_with_raw():
+    """JSON 路径解析失败：publishedAt 置空、置信 0、unparsed 警告、原始串保留。"""
+    result = SouthWeekendAdapter().parse_payload({
+        "data": {"list": [{
+            "id": "317022",
+            "url": "317022",
+            "subject": "标题",
+            "publish_time": "_not-a-time_",
+        }]},
+    })
+    payload = result.items[0].payload
+    assert payload["publishedAt"] is None
+    assert payload["publishedAtConfidence"] == 0.0
+    assert "published_at_unparsed" in payload["warnings"]
+    assert payload["ext"]["publishedAtRaw"] == "_not-a-time_"

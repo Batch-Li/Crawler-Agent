@@ -65,10 +65,11 @@ def normalize_raw_item(
     title = _clean_text(payload.get("title"))
     content = _clean_text(payload.get("content"))
     warnings = list(payload.get("warnings") or [])
-    if not content:
+    if not content and "content_missing" not in warnings:
         warnings.append("content_missing")
-    if not payload.get("publishedAt"):
+    if not payload.get("publishedAt") and "published_at_missing" not in warnings:
         warnings.append("published_at_missing")
+    warnings = list(dict.fromkeys(warnings))
     content_hash = _hash(f"{title or ''}\n{content or ''}\n{canonical_url}")
     now = collected_at or datetime.now(timezone.utc)
     unknown_fields = {key: value for key, value in payload.items() if key not in _KNOWN_PAYLOAD_FIELDS}

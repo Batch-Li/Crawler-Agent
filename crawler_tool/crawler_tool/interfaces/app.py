@@ -7,6 +7,7 @@ from typing import Any
 
 from crawler_tool.application import CrawlService
 from crawler_tool.application.capture_ingest_service import CaptureIngestService
+from crawler_tool.application.time_enrichment import TimeEnrichmentService
 from crawler_tool.application.wechat_search_service import WechatKeywordSearchService
 from crawler_tool.pagination import CursorCodec
 from crawler_tool.domain import ContentSearchRequest, WechatKeywordSearchRequest
@@ -32,7 +33,7 @@ from crawler_tool.validation import (
 )
 
 
-def make_service() -> CrawlService:
+def make_service(*, wayback_fallback: bool = False) -> CrawlService:
     """Build the focused Tool MVP with real public search sources enabled."""
     secret = os.environ.get("CRAWLER_CURSOR_SECRET")
     weibo_mode = os.environ.get("WEIBO_MODE", "anonymous")
@@ -87,7 +88,7 @@ def make_service() -> CrawlService:
     else:
         def sogou_factory() -> SogouWechatAdapter:
             return SogouWechatAdapter(mode="disabled")
-    crawl_service = CrawlService(SourceRegistry({
+    registry = SourceRegistry({
         "south_weekend": bind_http_get(SouthWeekendAdapter),
         "toutiao": bind_http_get(ToutiaoAdapter),
         "weibo": weibo_factory,
@@ -95,7 +96,15 @@ def make_service() -> CrawlService:
         "sogou_wechat": sogou_factory,
         # 央视网官方媒体列表：无凭据无风控；灰度期仅显式指定可用，暂不入默认联搜。
         "cctv_news": bind_http_get(CctvNewsAdapter),
-    }, default_platforms=("south_weekend", "toutiao")), cursor_codec=CursorCodec(secret) if secret else None)
+    }, default_platforms=("south_weekend", "toutiao"))
+    crawl_service = CrawlService(
+        registry,
+        cursor_codec=CursorCodec(secret) if secret else None,
+        # Wayback 第二级兜底默认关闭；--wayback-fallback 才注入传输。
+        time_enrichment=TimeEnrichmentService(
+            registry, wayback_http_get=HttpClient().get,
+        ) if wayback_fallback else None,
+    )
     shared_history = crawl_service.recent_store
     wechat_enabled = os.environ.get("WECHAT_MODE") == "authorized_first_page"
     wechat_cookie = os.environ.get("WECHAT_SESSION_COOKIE", "")
@@ -152,6 +161,8 @@ def main() -> None:
     parser.add_argument("--online", action="store_true", help="Allow a real validation network request")
     parser.add_argument("--confirm-real", action="store_true", help="Confirm the limited real validation request")
     parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument("--wayback-fallback", action="store_true",
+                        help="启用 Wayback CDX 首次收录时间兜底（默认关闭，详情页无果后逐条 1 次请求）")
     parser.add_argument("--serve", action="store_true", help="Run local HTTP Tool API on 127.0.0.1:8301")
     args = parser.parse_args()
 
@@ -177,9 +188,12 @@ def main() -> None:
         return
     if args.serve:
         import uvicorn
+        from functools import partial
+
         from crawler_tool.interfaces import create_app
 
-        uvicorn.run(create_app(make_service), host="127.0.0.1", port=8301)
+        uvicorn.run(create_app(partial(make_service, wayback_fallback=args.wayback_fallback)),
+                    host="127.0.0.1", port=8301)
         return
     parser.print_help()
 

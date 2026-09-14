@@ -13,8 +13,14 @@ from crawler_tool.pagination import PaginationError
 
 from crawler_tool.application import CrawlService
 from crawler_tool.application.capture_ingest_service import CaptureIngestService
+from crawler_tool.application.capture_queue import CaptureQueueStore
 from crawler_tool.application.recent_store import RecentItemsStore
-from crawler_tool.domain import CaptureIngestRequest, ContentSearchRequest, WechatKeywordSearchRequest
+from crawler_tool.domain import (
+    CaptureIngestRequest,
+    CaptureQueuePushRequest,
+    ContentSearchRequest,
+    WechatKeywordSearchRequest,
+)
 from crawler_tool.tools import IntelligenceTools
 
 # Platforms eligible for session-view filtering: registered sources plus manual-capture ones.
@@ -161,7 +167,7 @@ _CAPTURE_HTML = """<!doctype html>
  #count{margin:8px 0}
 </style></head>
 <body>
-<h1>捕获任务队列 <span class="meta">人工浏览的唯一入口页 · 任务存在本浏览器 · 平台收到的一切请求都由你触发</span></h1>
+<h1>捕获任务队列 <span class="meta">人工浏览的唯一入口页 · 队列存服务端（agent 可推送）· 平台收到的一切请求都由你触发</span></h1>
 <div class="bar">
  <input id="kw" size="24" placeholder="输入关键词后回车添加">
  <select id="maxage"><option value="1">1 天内算新鲜</option><option value="3" selected>3 天内算新鲜</option><option value="7">7 天内算新鲜</option></select>
@@ -174,27 +180,44 @@ _CAPTURE_HTML = """<!doctype html>
 <script>
 const PLATFORMS=[["xiaohongshu","小红书"],["douyin","抖音"]];
 function esc(t){const d=document.createElement('div');d.textContent=t==null?'':String(t);return d.innerHTML;}
-function loadTasks(){try{return JSON.parse(localStorage.getItem('signalx_capture_tasks')||'[]');}catch(e){return [];}}
-function saveTasks(t){localStorage.setItem('signalx_capture_tasks',JSON.stringify(t));}
 function searchUrl(p,kw){const e=encodeURIComponent(kw);
  if(p==='xiaohongshu')return 'https://www.xiaohongshu.com/search_result?keyword='+e+'&source=web_explore_feed';
  return 'https://www.douyin.com/search/'+e+'?type=general';}
 function daysAgoText(iso){const d=(Date.now()-new Date(iso).getTime())/86400000;
  if(d<1)return Math.max(1,Math.round(d*24))+'小时前';return Math.round(d)+'天前';}
+// 一次性迁移：旧版本任务存在浏览器 localStorage；全部推送成功才清除。
+async function migrateLegacy(){
+ try{
+  const legacy=JSON.parse(localStorage.getItem('signalx_capture_tasks')||'[]');
+  if(Array.isArray(legacy)&&legacy.length){
+   const res=await fetch('/api/v1/tool/capture-queue',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({keywords:legacy,source:'manual'})});
+   if(res.ok)localStorage.removeItem('signalx_capture_tasks');
+  }
+ }catch(e){}
+}
 async function render(){
- const tasks=loadTasks();const days=+document.getElementById('maxage').value||3;
+ const days=+document.getElementById('maxage').value||3;
  const box=document.getElementById('rows');box.innerHTML='';
- if(!tasks.length){box.innerHTML='<p class="meta">队列为空：在上方输入关键词后回车添加；任务只保存在本浏览器。</p>';return;}
- const url='/api/v1/tool/capture-status?keywords='+encodeURIComponent(tasks.join(','))+'&max_age_days='+days;
- const data=await (await fetch(url)).json();
+ let entries=[];
+ try{
+  const data=await (await fetch('/api/v1/tool/capture-queue')).json();
+  entries=(data.keywords||[]).map(k=>typeof k==='string'?{keyword:k,source:'manual'}:k);
+ }catch(e){box.innerHTML='<p class="meta">无法读取队列：请确认本地服务已启动。</p>';return;}
+ if(!entries.length){box.innerHTML='<p class="meta">队列为空：在上方输入关键词回车添加；agent 运行加 --push-capture-queue 会自动把查询词推进来。</p>';return;}
+ const url='/api/v1/tool/capture-status?keywords='+encodeURIComponent(entries.map(k=>k.keyword).join(','))+'&max_age_days='+days;
+ const fresh=await (await fetch(url)).json();
  const staleLinks=[];let staleWords=0;
- for(const row of data.keywords){
+ for(const row of fresh.keywords){
+   const meta=entries.find(k=>(k.keyword||'').toLowerCase()===row.keyword.toLowerCase())||{};
    const div=document.createElement('div');div.className='task';
    const head=document.createElement('span');head.className='taskhead';
    const name=document.createElement('b');name.textContent=row.keyword;
+   const tag=document.createElement('span');tag.className='badge';
+   tag.textContent=meta.source==='agent'?'agent 推送':'手动';
    const del=document.createElement('button');del.textContent='×';del.className='del';del.title='移出队列';
-   del.onclick=()=>{saveTasks(loadTasks().filter(t=>t!==row.keyword));render();};
-   head.appendChild(name);head.appendChild(del);div.appendChild(head);
+   del.onclick=async()=>{await fetch('/api/v1/tool/capture-queue?keyword='+encodeURIComponent(row.keyword),{method:'DELETE'});render();};
+   head.appendChild(name);head.appendChild(tag);head.appendChild(del);div.appendChild(head);
    let wordStale=false;
    for(const [pid,label] of PLATFORMS){
      const st=row.platforms[pid]||{};
@@ -211,29 +234,36 @@ async function render(){
    box.appendChild(div);
  }
  window.__staleLinks=staleLinks;
- document.getElementById('count').textContent=tasks.length+' 个词 · '+staleWords+' 个词存在未覆盖平台（红/黄项点开即补，助手脚本会自动入库）';
+ document.getElementById('count').textContent=fresh.keywords.length+' 个词 · '+staleWords+' 个词存在未覆盖平台（红/黄项点开即补，助手脚本会自动入库）';
 }
 function copyStale(){
  const links=window.__staleLinks||[];
  if(!links.length){alert('没有未覆盖的链接，都是新鲜的。');return;}
  navigator.clipboard.writeText(links.join('\\n')).then(()=>alert('已复制 '+links.length+' 个链接，可粘贴到浏览器批量打开。'));
 }
-document.getElementById('kw').addEventListener('keydown',e=>{
+document.getElementById('kw').addEventListener('keydown',async e=>{
  if(e.key!=='Enter')return;
  const v=e.target.value.trim();if(!v)return;
- const tasks=loadTasks();if(!tasks.includes(v))tasks.push(v);
- saveTasks(tasks);e.target.value='';render();
+ const res=await fetch('/api/v1/tool/capture-queue',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({keywords:[v],source:'manual'})});
+ if(res.ok){e.target.value='';render();}
 });
 document.getElementById('maxage').onchange=render;
-render();
+migrateLegacy().then(render);
 </script></body></html>"""
 
 
-def create_app(service_factory: Callable[[], CrawlService]) -> FastAPI:
+def create_app(
+    service_factory: Callable[[], CrawlService],
+    *,
+    capture_queue: CaptureQueueStore | None = None,
+) -> FastAPI:
     """Create the focused crawler Tool MVP HTTP application."""
     app = FastAPI(title="SignalX Crawler Tool", version="0.1.0")
     service = service_factory()
     tool = IntelligenceTools(service)
+    # 捕获关键词队列：服务端持久化，agent（POST）与 /capture 页（增删查）共享。
+    queue = capture_queue if capture_queue is not None else CaptureQueueStore()
     # 全来源共享的会话视图：网络搜索、微信关键词、手动捕获写入同一实例；
     # 组合根未接好时就地补装，保证 /view 与导出总有数据源。
     store = getattr(service, "recent_store", None)
@@ -331,8 +361,22 @@ def create_app(service_factory: Callable[[], CrawlService]) -> FastAPI:
             report.append({"keyword": word, "platforms": platforms})
         return JSONResponse(content={"maxAgeDays": max_age_days, "keywords": report})
 
+    @app.get("/api/v1/tool/capture-queue")
+    def get_capture_queue():
+        entries = queue.list_keywords()
+        return JSONResponse(content={"count": len(entries), "keywords": entries})
+
+    @app.post("/api/v1/tool/capture-queue")
+    def push_capture_queue(push: CaptureQueuePushRequest):
+        summary = queue.add(push.keywords, source=push.source)
+        return JSONResponse(content=summary)
+
+    @app.delete("/api/v1/tool/capture-queue")
+    def remove_capture_queue(keyword: str = Query(..., min_length=1, max_length=200)):
+        return JSONResponse(content={"removed": queue.remove(keyword)})
+
     @app.get("/capture")
-    def capture_queue() -> HTMLResponse:
+    def capture_queue_page() -> HTMLResponse:
         return HTMLResponse(content=_CAPTURE_HTML)
 
     @app.get("/api/v1/tool/captured-items/export")

@@ -65,8 +65,12 @@ def test_toutiao_pagination_http_round_trip_and_cursor_errors():
     assert second.json()["items"][0]["sourceItemId"] == "654321"
     assert calls == [0, 1]
 
+    # 篡改签名的首字符（必改变解码后的首字节）；末字符因 base64 去尾随填充
+    # 只承载 4 个有效比特，恰以 A-D 结尾时改末字符解码结果不变（历史偶发缺陷）。
+    _body, signature = first_body["nextCursor"].split(".", 1)
+    tampered = f"{_body}.{'A' if signature[0] != 'A' else 'B'}{signature[1:]}"
     invalid = client.post("/api/v1/tool/search-content", json={
-        "query": "AI客服", "platforms": ["toutiao"], "cursor": first_body["nextCursor"][:-1] + "A",
+        "query": "AI客服", "platforms": ["toutiao"], "cursor": tampered,
     })
     assert invalid.status_code == 422
     assert invalid.json()["detail"]["code"] == "INVALID_CURSOR"

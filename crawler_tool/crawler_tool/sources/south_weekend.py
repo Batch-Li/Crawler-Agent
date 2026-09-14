@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 from lxml import html
 
 from crawler_tool.domain import ContentSearchRequest, SourceErrorCode, SourceStatus
+from crawler_tool.infrastructure.detail_time import parse_detail_time
 from crawler_tool.sources.base import AdapterResult, RawItem, SourceAdapter
 from crawler_tool.pagination import PageRequest
 
@@ -18,7 +19,7 @@ class SouthWeekendAdapter(SourceAdapter):
     """South Weekend SSR search adapter with JSON compatibility parsing."""
 
     platform = "south_weekend"
-    adapter_version = "0.2.0-ssr"
+    adapter_version = "0.2.1-ssr"
     base_url = "https://www.infzm.com"
 
     def __init__(self, http_get: Any | None = None, *, clock: datetime | None = None) -> None:
@@ -138,6 +139,49 @@ class SouthWeekendAdapter(SourceAdapter):
             return AdapterResult(status=SourceStatus.EMPTY)
         return AdapterResult(items=items, status=SourceStatus.SUCCESS)
 
+    def fetch_detail(self, url: str) -> AdapterResult:
+        """有边界详情页时间补抓：单次 GET、仅提取发布时间、不解析正文、失败不重试。
+
+        与旧项目"详情页循环抓取"的边界：由 TimeEnrichment 显式启用、每轮条目
+        数有上限、请求预算计入调用方；验证码/认证页即停。默认搜索路径不调用。
+        """
+        if self.http_get is None:
+            return AdapterResult(
+                status=SourceStatus.SOURCE_UNAVAILABLE,
+                error_code=SourceErrorCode.SOURCE_UNAVAILABLE,
+                message="South Weekend HTTP transport is not configured",
+                retryable=False,
+            )
+        try:
+            response = self.http_get(url, timeout=10)
+            status_code = getattr(response, "status_code", None)
+            if status_code is not None:
+                if status_code == 429:
+                    return AdapterResult(status=SourceStatus.RATE_LIMITED, error_code=SourceErrorCode.RATE_LIMITED, message="South Weekend detail request was rate limited", retryable=False)
+                if status_code in {401, 403}:
+                    return AdapterResult(status=SourceStatus.AUTHENTICATION_REQUIRED, error_code=SourceErrorCode.AUTH_REQUIRED, message="South Weekend rejected the detail request", retryable=False)
+                if status_code >= 400:
+                    return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.INVALID_RESPONSE, message=f"South Weekend detail returned HTTP {status_code}", retryable=False)
+            content = getattr(response, "content", None)
+            page = _decode_html(content) if isinstance(content, (bytes, bytearray)) else str(response.text)
+        except TimeoutError:
+            return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.NETWORK_TIMEOUT, message="South Weekend detail request timed out", retryable=False)
+        except Exception as exc:
+            return AdapterResult(status=SourceStatus.NETWORK_ERROR, error_code=SourceErrorCode.INVALID_RESPONSE, message=f"South Weekend detail request failed: {type(exc).__name__}", retryable=False)
+        if _looks_like_challenge(page):
+            return AdapterResult(status=SourceStatus.AUTHENTICATION_REQUIRED, error_code=SourceErrorCode.AUTH_REQUIRED, message="South Weekend returned a login or challenge page on detail", retryable=False)
+        detail_time = parse_detail_time(page, clock=self.clock)
+        if detail_time is None:
+            return AdapterResult(status=SourceStatus.EMPTY, message="detail page exposes no publish time signal")
+        return AdapterResult(
+            status=SourceStatus.SUCCESS,
+            response_metadata={
+                "publishedAt": detail_time.iso,
+                "publishedAtConfidence": detail_time.confidence,
+                "detectedBy": detail_time.detected_by,
+            },
+        )
+
     def parse_payload(self, payload: dict[str, Any], *, page_number: int = 1) -> AdapterResult:
         records = payload.get("data", {}).get("list")
         if records is None:
@@ -149,6 +193,8 @@ class SouthWeekendAdapter(SourceAdapter):
             if not raw_url:
                 continue
             url = raw_url if raw_url.startswith("http") else f"{self.base_url}/contents/{raw_url.lstrip('/')}"
+            publish_time_raw = record.get("publish_time")
+            published_at, date_warnings, confidence = _parse_payload_time(publish_time_raw)
             items.append(RawItem(
                 platform=self.platform,
                 raw_data_ref=f"raw/south_weekend/{source_id or 'unknown'}.json",
@@ -161,12 +207,14 @@ class SouthWeekendAdapter(SourceAdapter):
                     "content": record.get("introtext"),
                     "url": url,
                     "author": {"name": record.get("author") or None},
-                    "publishedAt": record.get("publish_time"),
+                    "publishedAt": published_at,
                     "metrics": {"commentCount": _safe_int(record.get("comment_count"))},
                     "method": "http",
                     "adapterVersion": self.adapter_version,
                     "hasFullContent": False,
-                    "warnings": ["search_result_summary_only"],
+                    "publishedAtConfidence": confidence,
+                    "warnings": ["search_result_summary_only", *date_warnings],
+                    "ext": {"publishedAtRaw": str(publish_time_raw) if publish_time_raw else None},
                 },
             ))
         return AdapterResult(
@@ -231,6 +279,25 @@ def _parse_display_date(value: str | None, clock: datetime) -> tuple[str | None,
         return datetime.combine(candidate, datetime.min.time(), tzinfo=tz).isoformat(), ["published_at_year_inferred", "published_at_time_missing"], 0.65
     try:
         return datetime.fromisoformat(value).astimezone(tz).isoformat(), [], 1.0
+    except ValueError:
+        return None, ["published_at_unparsed"], 0.0
+
+
+def _parse_payload_time(value: Any) -> tuple[str | None, list[str], float]:
+    """JSON 路径的 publish_time：完整 ISO 置信 1.0；日期-only 置信 0.85；
+    解析失败如实置空并保留原始串于 ext，不再按归一化默认值高估为 1.0。"""
+    if not value:
+        return None, ["published_at_missing"], 0.0
+    text = str(value).strip()
+    tz = timezone(timedelta(hours=8))
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        parsed = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=tz)
+        return parsed.isoformat(), ["published_at_time_missing"], 0.85
+    try:
+        moment = datetime.fromisoformat(text)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=tz)
+        return moment.astimezone(tz).isoformat(), [], 1.0
     except ValueError:
         return None, ["published_at_unparsed"], 0.0
 

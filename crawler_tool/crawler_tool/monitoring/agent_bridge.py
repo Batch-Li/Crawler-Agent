@@ -34,6 +34,8 @@ def item_to_evidence(item: dict[str, Any]) -> dict[str, Any]:
         "source": str(item.get("platform") or ""),
         "url": item.get("url"),
         "publishedAt": item.get("publishedAt"),
+        "publishedAtConfidence": quality.get("publishedAtConfidence"),
+        "publishedAtRaw": ext.get("publishedAtRaw"),
         "snippet": item.get("summary") or (item.get("content") if quality.get("hasFullContent") is False else None),
         "content": None if quality.get("hasFullContent") is False else item.get("content"),
         "dedupKey": item.get("dedupKey") or dedup.get("dedupKey"),
@@ -95,11 +97,14 @@ class SearchContentCollectionTool:
         base_url: str = "http://127.0.0.1:8301",
         platforms: list[str] | None = None,
         timeout: float = 30.0,
+        enrich_time: bool = False,
     ) -> None:
         self._search_fn = search_fn
         self._base_url = base_url.rstrip("/")
         self._platforms = platforms
         self._timeout = timeout
+        # 有边界详情页时间补全：随每次 search 请求显式声明，由采集服务侧限预算。
+        self._enrich_time = enrich_time
 
     def search(self, request: Any) -> list[dict[str, Any]]:
         return self.search_with_reports(request)["evidence"]
@@ -132,6 +137,8 @@ class SearchContentCollectionTool:
         body: dict[str, Any] = {"query": query, "limit": limit, "freshness": "prefer_fresh"}
         if self._platforms:
             body["platforms"] = self._platforms
+        if self._enrich_time:
+            body["enrichTime"] = True
         response = httpx.post(
             f"{self._base_url}/api/v1/tool/search-content",
             json=body,

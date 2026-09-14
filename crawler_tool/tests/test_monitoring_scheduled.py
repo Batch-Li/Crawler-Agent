@@ -109,16 +109,25 @@ def test_scheduled_tick_archives_feeds_monitor_and_rotates(tmp_path: Path):
     assert len(calls) == 4
 
 
-def test_service_unreachable_returns_hint(tmp_path: Path):
+def test_service_unreachable_returns_hint(tmp_path: Path, monkeypatch):
+    # 不依赖真实端口行为：本机代理可能拦截任意 loopback 端口（502 不抛异常），
+    # 确定性注入连接失败，保证走"服务不可达"分支。
+    import crawler_tool.monitoring.scheduled_tick as scheduled_tick
+
+    def refused(*args, **kwargs):
+        raise ConnectionError("connection refused by test")
+
+    monkeypatch.setattr(scheduled_tick.httpx, "get", refused)
     summary = run_scheduled_tick(
         config_dir=None,
         data_dir=tmp_path / "mon",
         crawl_dir=tmp_path / "crawl",
-        base_url="http://127.0.0.1:9",  # 保留端口，必然拒绝连接
+        base_url="http://127.0.0.1:9",
         queries_file=write_queries_file(tmp_path),
         now=NOW,
     )
     assert "error" in summary
+    assert "ConnectionError" in summary["error"]
     assert "--serve" in summary["hint"]
 
 

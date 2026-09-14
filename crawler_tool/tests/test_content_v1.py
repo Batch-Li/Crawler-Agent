@@ -44,3 +44,18 @@ def test_content_item_preserves_unmapped_raw_fields_in_ext():
     )
     item = normalize_raw_item(raw)
     assert item.ext["unexpected"] == "must not be silently ignored"
+
+
+def test_missing_time_warning_is_not_duplicated():
+    raw = RawItem(
+        platform="weibo",
+        payload={
+            "sourceType": "social_media",
+            "contentType": "post",
+            "title": "title",
+            "url": "https://example.com/post/1",
+            "warnings": ["published_at_missing"],
+        },
+    )
+    item = normalize_raw_item(raw)
+    assert item.quality.warnings.count("published_at_missing") == 1

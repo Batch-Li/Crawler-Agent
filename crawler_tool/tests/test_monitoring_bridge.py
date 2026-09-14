@@ -158,6 +158,21 @@ def test_ingest_accepts_real_contentitem_shape(tmp_path: Path):
     assert evidence["dedupKey"] == "sha256:abc123"
 
 
+def test_item_to_evidence_passes_time_confidence_and_raw():
+    """时间补全链路：置信度与原始串必须透传（agent 侧 Evidence 契约测试见 signalx-agent）。"""
+    item = {
+        "contentId": "cid_9", "title": "标题", "platform": "toutiao",
+        "url": "https://example.com/9", "publishedAt": "2026-08-23T02:20:00+00:00",
+        "summary": "摘要", "dedupKey": "k9",
+        "quality": {"warnings": ["published_at_time_missing"], "publishedAtConfidence": 0.85},
+        "ext": {"publishedAtRaw": "2026-08-23", "sourceName": "科技媒体"},
+    }
+    evidence = item_to_evidence(item)
+    assert evidence["publishedAt"] == "2026-08-23T02:20:00+00:00"
+    assert evidence["publishedAtConfidence"] == 0.85
+    assert evidence["publishedAtRaw"] == "2026-08-23"
+
+
 def test_monitoring_tool_end_to_end(tmp_path: Path):
     tool = MonitoringTool(data_dir=tmp_path / "mon")
     summary = tool.ingest([

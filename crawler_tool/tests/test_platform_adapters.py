@@ -67,6 +67,87 @@ def test_toutiao_parses_relative_publish_time():
     assert "published_at_relative" in payload["warnings"]
 
 
+def test_toutiao_extended_time_forms():
+    """真实卡片新增形态：周/月/年前、中文与点分隔日期、MM-DD HH:MM。"""
+    from datetime import datetime, timezone
+
+    clock = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+    result = ToutiaoAdapter(clock=clock).parse_html(
+        (ROOT / "toutiao_time_forms.html").read_text(encoding="utf-8")
+    )
+    payload = {item.payload["sourceItemId"]: item.payload for item in result.items}
+
+    # 3周前：clock(UTC 12:00 = CST 20:00) - 21 天
+    assert payload["100001"]["publishedAtConfidence"] == 0.6
+    assert "published_at_relative" in payload["100001"]["warnings"]
+    assert payload["100001"]["publishedAt"].startswith("2026-08-16T12:00:00+00:00")
+    # 8个月前：日历月回退到 2026-01-06，保留时刻
+    assert payload["100002"]["publishedAt"].startswith("2026-01-06T12:00:00+00:00")
+    assert payload["100002"]["publishedAtConfidence"] == 0.6
+    # 2年前：2024-09-06，保留时刻
+    assert payload["100003"]["publishedAt"].startswith("2024-09-06T12:00:00+00:00")
+    # 中文日期：按北京时间零点换算 UTC，置信 0.85
+    assert payload["100004"]["publishedAt"] == "2023-02-20T16:00:00+00:00"
+    assert payload["100004"]["publishedAtConfidence"] == 0.85
+    assert "published_at_time_missing" in payload["100004"]["warnings"]
+    # 点分隔日期同纯日期
+    assert payload["100005"]["publishedAt"] == "2023-02-20T16:00:00+00:00"
+    assert payload["100005"]["publishedAtConfidence"] == 0.85
+    # MM-DD HH:MM：年份推断（02-21 早于时钟，取当年），置信 0.65
+    assert payload["100006"]["publishedAt"] == "2026-02-21T06:30:00+00:00"
+    assert payload["100006"]["publishedAtConfidence"] == 0.65
+    assert "published_at_year_inferred" in payload["100006"]["warnings"]
+
+
+def test_toutiao_real_world_time_forms():
+    """真实卡片出现的形态：缺年月日（1月14日）与相对词+时刻（昨天10:37）。"""
+    from datetime import datetime, timezone
+
+    clock = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+    # 1月14日：已过当年 1 月且不在未来窗口 → 推断为 2026 年
+    result = ToutiaoAdapter(clock=clock).parse_html(_toutiao_card("科技媒体", "1月14日"))
+    payload = result.items[0].payload
+    assert payload["publishedAt"] == "2026-01-13T16:00:00+00:00"
+    assert payload["publishedAtConfidence"] == 0.65
+    assert "published_at_year_inferred" in payload["warnings"]
+    # 昨天10:37：北京时间昨天同时刻
+    result = ToutiaoAdapter(clock=clock).parse_html(_toutiao_card("科技媒体", "昨天10:37"))
+    payload = result.items[0].payload
+    assert payload["publishedAt"] == "2026-09-05T02:37:00+00:00"
+    assert payload["publishedAtConfidence"] == 0.6
+    assert "published_at_relative" in payload["warnings"]
+    # 今天08:05：北京时间今天同时刻
+    result = ToutiaoAdapter(clock=clock).parse_html(_toutiao_card("科技媒体", "今天08:05"))
+    assert result.items[0].payload["publishedAt"] == "2026-09-06T00:05:00+00:00"
+    # 前天07:38：北京时间前天（09-04）07:38 = 09-03T23:38Z
+    result = ToutiaoAdapter(clock=clock).parse_html(_toutiao_card("科技媒体", "前天07:38"))
+    assert result.items[0].payload["publishedAt"] == "2026-09-03T23:38:00+00:00"
+    assert result.items[0].payload["publishedAtConfidence"] == 0.6
+
+
+def test_toutiao_fallback_scans_spans_when_primary_position_fails():
+    """主位置（最末 span）不是时间时，在同容器其余 span 里兜底取最末可解析者。"""
+    from datetime import datetime, timedelta, timezone
+
+    clock = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+    result = ToutiaoAdapter(clock=clock).parse_html(
+        (ROOT / "toutiao_time_forms.html").read_text(encoding="utf-8")
+    )
+    payload = {item.payload["sourceItemId"]: item.payload for item in result.items}
+
+    # 主位置是"置顶"（不可解析），"昨天" 在更早的 span 里
+    assert payload["100007"]["publishedAt"] == (clock - timedelta(days=1)).isoformat()
+    assert payload["100007"]["publishedAtConfidence"] == 0.6
+    assert payload["100007"]["ext"]["publishedAtRaw"] == "昨天"
+    # 无时间卡：全 span 均不可解析，保持置空 + unparsed
+    assert payload["100008"]["publishedAt"] is None
+    assert payload["100008"]["publishedAtConfidence"] == 0.0
+    assert "published_at_unparsed" in payload["100008"]["warnings"]
+    # 干扰负样本：标题里的日期、非时间 span 都不误判为发布时间
+    assert payload["100009"]["publishedAt"] is None
+    assert payload["100009"]["publishedAtConfidence"] == 0.0
+
+
 def test_toutiao_unwraps_double_wrapped_jump_link():
     """回归：真实页面存在双层嵌套跳转链，必须循环剥皮到真实地址。"""
     href = (

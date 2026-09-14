@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import calendar
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from html import unescape
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -19,7 +20,7 @@ class ToutiaoAdapter(SourceAdapter):
     """Parser-first Toutiao search adapter without embedded credentials."""
 
     platform = "toutiao"
-    adapter_version = "0.2.0"
+    adapter_version = "0.3.0"
 
     def __init__(self, http_get: Any | None = None, *, clock: datetime | None = None) -> None:
         self.http_get = http_get
@@ -130,6 +131,15 @@ class ToutiaoAdapter(SourceAdapter):
             source_name = source_values[0] if source_values else None
             published = source_values[-1] if len(source_values) > 1 else None
             published_iso, published_confidence, time_warning = _parse_time_signal(published, self.clock)
+            if published_confidence == 0.0:
+                # 主位置缺时间或解析失败时，在同容器的其余 span 里 fullmatch 时间形态，
+                # 取最末一个可解析者；不扫描整卡，避免把标题日期、评论数误当发布时间。
+                for value in reversed(source_values):
+                    candidate_iso, candidate_confidence, candidate_warning = _parse_time_signal(value, self.clock)
+                    if candidate_confidence > 0.0:
+                        published = value
+                        published_iso, published_confidence, time_warning = candidate_iso, candidate_confidence, candidate_warning
+                        break
             comment_text = " ".join(card.xpath('.//*[contains(text(), "评论")]/text()'))
             items.append(RawItem(
                 platform=self.platform,
@@ -180,10 +190,11 @@ def _contains_auth_or_challenge(page: str) -> bool:
 
 
 def _parse_time_signal(raw: str | None, clock: datetime) -> tuple[str | None, float, str | None]:
-    """头条时间信号解析：完整 ISO > 带时刻无时区 > 纯日期 > 相对表述 > MM-DD。
+    """头条时间信号解析：完整 ISO > 带时刻无时区 > 纯日期（连字符/中文/点分隔）> MM-DD（可带时刻）> 相对表述。
 
-    真实搜索页的卡片段落常给"2026-08-23"或"3小时前"这类形态——旧版只认
-    完整 ISO，导致真实数据 publishedAt 全部为空。返回 (UTC ISO, 置信度, 警告)。
+    真实搜索页的卡片段落常给"2026-08-23""3小时前""2023年2月21日""8个月前"
+    这类形态——旧版只认完整 ISO，导致真实数据 publishedAt 全部为空。
+    返回 (UTC ISO, 置信度, 警告)。
     """
     if not raw:
         return None, 0.0, None
@@ -191,8 +202,7 @@ def _parse_time_signal(raw: str | None, clock: datetime) -> tuple[str | None, fl
     # 纯日期必须先于 fromisoformat 判定（3.11 的 fromisoformat 也接受日期-only）。
     m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", value)
     if m:
-        moment = datetime(int(m[1]), int(m[2]), int(m[3]), tzinfo=_CST)
-        return moment.astimezone(timezone.utc).isoformat(), 0.85, "published_at_time_missing"
+        return _cst_midnight(int(m[1]), int(m[2]), int(m[3])), 0.85, "published_at_time_missing"
     try:
         moment = datetime.fromisoformat(value)
         if moment.tzinfo is None:
@@ -200,13 +210,24 @@ def _parse_time_signal(raw: str | None, clock: datetime) -> tuple[str | None, fl
         return moment.astimezone(timezone.utc).isoformat(), 1.0, None
     except ValueError:
         pass
+    m = re.fullmatch(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]", value)
+    if m:
+        return _cst_midnight(int(m[1]), int(m[2]), int(m[3])), 0.85, "published_at_time_missing"
+    m = re.fullmatch(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]", value)
+    if m:
+        # 真实卡片存在「1月14日」缺年形态：按 MM-DD 同规则推断年份，置信 0.65。
+        moment = _cst_year_inferred(clock, int(m[1]), int(m[2]))
+        return moment.astimezone(timezone.utc).isoformat(), 0.65, "published_at_year_inferred"
+    m = re.fullmatch(r"(\d{4})\.(\d{1,2})\.(\d{1,2})", value)
+    if m:
+        return _cst_midnight(int(m[1]), int(m[2]), int(m[3])), 0.85, "published_at_time_missing"
+    m = re.fullmatch(r"(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})", value)
+    if m:
+        moment = _cst_year_inferred(clock, int(m[1]), int(m[2])).replace(hour=int(m[3]), minute=int(m[4]))
+        return moment.astimezone(timezone.utc).isoformat(), 0.65, "published_at_year_inferred"
     m = re.fullmatch(r"(\d{1,2})-(\d{1,2})", value)
     if m:
-        today = clock.astimezone(_CST).date()
-        candidate = date(today.year, int(m[1]), int(m[2]))
-        if candidate > today + timedelta(days=2):
-            candidate = date(today.year - 1, int(m[1]), int(m[2]))
-        moment = datetime.combine(candidate, datetime.min.time(), tzinfo=_CST)
+        moment = _cst_year_inferred(clock, int(m[1]), int(m[2]))
         return moment.astimezone(timezone.utc).isoformat(), 0.65, "published_at_year_inferred"
     m = re.fullmatch(r"(\d+)\s*分钟前", value)
     if m:
@@ -217,11 +238,61 @@ def _parse_time_signal(raw: str | None, clock: datetime) -> tuple[str | None, fl
     m = re.fullmatch(r"(\d+)\s*天前", value)
     if m:
         return (clock - timedelta(days=int(m[1]))).isoformat(), 0.6, "published_at_relative"
+    m = re.fullmatch(r"(\d{1,2})\s*周前", value)
+    if m:
+        return (clock - timedelta(weeks=int(m[1]))).isoformat(), 0.6, "published_at_relative"
+    m = re.fullmatch(r"(\d{1,2})\s*个月前", value)
+    if m:
+        return _shifted_moment(clock, int(m[1])), 0.6, "published_at_relative"
+    m = re.fullmatch(r"(\d{1,2})\s*年前", value)
+    if m:
+        return _shifted_moment(clock, int(m[1]) * 12), 0.6, "published_at_relative"
     if value in ("昨天", "昨日"):
         return (clock - timedelta(days=1)).isoformat(), 0.6, "published_at_relative"
     if value in ("今天", "今日"):
         return clock.isoformat(), 0.6, "published_at_relative"
+    m = re.fullmatch(r"(?:昨天|昨日)\s*(\d{1,2}):(\d{2})", value)
+    if m:
+        anchor = clock.astimezone(_CST) - timedelta(days=1)
+        moment = anchor.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+        return moment.astimezone(timezone.utc).isoformat(), 0.6, "published_at_relative"
+    m = re.fullmatch(r"前天\s*(\d{1,2}):(\d{2})", value)
+    if m:
+        anchor = clock.astimezone(_CST) - timedelta(days=2)
+        moment = anchor.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+        return moment.astimezone(timezone.utc).isoformat(), 0.6, "published_at_relative"
+    m = re.fullmatch(r"(?:今天|今日)\s*(\d{1,2}):(\d{2})", value)
+    if m:
+        anchor = clock.astimezone(_CST)
+        moment = anchor.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+        return moment.astimezone(timezone.utc).isoformat(), 0.6, "published_at_relative"
     return None, 0.0, "published_at_unparsed"
+
+
+def _cst_midnight(year: int, month: int, day: int) -> str:
+    moment = datetime(year, month, day, tzinfo=_CST)
+    return moment.astimezone(timezone.utc).isoformat()
+
+
+def _cst_year_inferred(clock: datetime, month: int, day: int) -> datetime:
+    """MM-DD 缺年份：按北京时间时钟推断年份，未来 2 天以上视为去年。"""
+    today = clock.astimezone(_CST).date()
+    candidate = date(today.year, month, day)
+    if candidate > today + timedelta(days=2):
+        candidate = date(today.year - 1, month, day)
+    return datetime.combine(candidate, datetime.min.time(), tzinfo=_CST)
+
+
+def _shifted_moment(clock: datetime, months: int) -> str:
+    """N个月前/N年前：日历月回退并截断到目标月末（如 5月31日 个月前=3月31日、
+    2月29日 一年前=2月28日），保留时刻；不用 30*N 天近似。上限 99 个月。"""
+    anchor = clock.astimezone(_CST)
+    index = anchor.year * 12 + (anchor.month - 1) - min(months, 99)
+    year, month_zero = divmod(index, 12)
+    month = month_zero + 1
+    day = min(anchor.day, calendar.monthrange(year, month)[1])
+    moment = datetime(year, month, day, anchor.hour, anchor.minute, anchor.second, tzinfo=_CST)
+    return moment.astimezone(timezone.utc).isoformat()
 
 
 def _text(node: Any) -> str | None:
