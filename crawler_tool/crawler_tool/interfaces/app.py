@@ -70,9 +70,9 @@ def make_service(*, wayback_fallback: bool = False) -> CrawlService:
     else:
         def xhs_factory() -> XiaohongshuAdapter:
             return XiaohongshuAdapter(mode=xhs_mode if xhs_mode in ("disabled", "anonymous") else "disabled")
-    # 搜狗微信公开索引：默认 disabled 仅 source-health 可见；显式开启后仍须在请求里
-    # 指名 sogou_wechat，绝不进入默认联搜。包装链接不解析，验证码即停不重试。
-    sogou_mode = os.environ.get("SOGOU_WECHAT_MODE", "disabled")
+    # 搜狗微信公开索引：默认启用（2026-09 实测稳定；SOGOU_WECHAT_MODE=disabled 可显式关闭）。
+    # 即便启用，仍须在请求里指名 sogou_wechat，绝不进入默认联搜。包装链接不解析，验证码即停不重试。
+    sogou_mode = os.environ.get("SOGOU_WECHAT_MODE", "anonymous_best_effort")
     if sogou_mode == "anonymous_best_effort":
         def sogou_factory() -> SogouWechatAdapter:
             client = HttpClient(follow_redirects=False)

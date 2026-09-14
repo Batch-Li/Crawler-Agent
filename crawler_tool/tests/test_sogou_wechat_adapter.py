@@ -186,13 +186,13 @@ def test_service_explicit_query_on_disabled_sogou_is_clean_unavailable():
     assert "SOGOU_WECHAT_MODE" in report.message
 
 
-def test_make_service_wires_sogou_disabled_by_default(monkeypatch):
+def test_make_service_wires_sogou_enabled_by_default(monkeypatch):
     monkeypatch.delenv("SOGOU_WECHAT_MODE", raising=False)
     service = make_service()
 
     assert "sogou_wechat" not in service.registry.defaults()
     reports = {report["platform"]: report for report in service.registry.health()}
-    assert reports["sogou_wechat"]["mode"] == "disabled"
+    assert reports["sogou_wechat"]["mode"] == "anonymous_best_effort"
 
 
 def test_make_service_wires_sogou_best_effort_mode(monkeypatch):

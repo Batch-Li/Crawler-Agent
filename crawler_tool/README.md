@@ -22,8 +22,8 @@ SignalX 统一采集 Tool 与监测层。完整的事件发现、分析和时间
 | 南方周末 `south_weekend` | 真实首屏可用；分页 unverified 不签发 cursor | 默认联搜成员 | ✅ | 无需配置 |
 | 头条 `toutiao` | 首屏可用；分页 fixture 闭环、真实两页未证；时间解析 0.2.0（纯日期/相对时间） | 默认联搜成员 | ✅ | 无需配置 |
 | 央视网 `cctv_news` | 官方栏目列表直读，秒级时间+关键词+稳定 ID，字段质量最高 | 显式指定（灰度） | ✅ | 无需配置 |
-| 微博 `weibo` | 匿名尽力而为（近期 parser_changed 偏多，待修）；可选临时授权。**匿名属机会性来源，不建议入监测轮换** | 必须显式指定 | 可选 | 可选 `WEIBO_MODE`+`WEIBO_SESSION_COOKIE` |
-| **搜狗微信** `sogou_wechat` | 文章索引发现；包装链接不解析、无正文、验证码即停 | 默认 disabled | 启用后可用 | `SOGOU_WECHAT_MODE=anonymous_best_effort` |
+| 微博 `weibo` | **匿名已停用**（2026-09 实测基本不可用，已从监测配置 `queries.json` 移除；代码保留，显式指定仍可机会性使用）；可选临时授权 | 必须显式指定 | ❌ 已停用 | 可选 `WEIBO_MODE`+`WEIBO_SESSION_COOKIE` |
+| **搜狗微信** `sogou_wechat` | 文章索引发现；包装链接不解析、无正文、验证码即停。**实测稳定** | 默认启用 | ✅ 轮换固定成员 | 默认启用；`SOGOU_WECHAT_MODE=disabled` 显式关闭 |
 | 微信 `wechat` | 授权通道受跨号列表 200013 平台限制；数据走手动捕获 | 必须显式指定 | 🔗 经捕获通道 | 授权模式需 `WECHAT_MODE`+`WECHAT_SESSION_COOKIE`；默认停用 |
 | 小红书 `xiaohongshu` | 接口需动态签名（461），网络禁用；走捕获投喂 | 默认 disabled | 🔗 经捕获通道 | `XHS_MODE`+`XHS_SESSION_COOKIE` |
 | 抖音 `douyin` | Parser-only，不做网络自动化 | registry 可见 | 🔗 经捕获通道 | 投喂即可用 |
@@ -48,7 +48,7 @@ python -m crawler_tool.monitoring.run_tick --data-dir data/monitoring --set-stat
 **查询清单/平台/触发阈值**都在 `config\monitoring\queries.json` 和 `base_rules.json`（业务可改，
 每轮自动生效）；**主体档案**（我方/竞品/别名/产品名）在 `config\monitoring\entities.json`。
 
-仓库的监测配置包含 `sogou_wechat`：使用前在启动服务的终端启用它（见下文），或从 `queries.json` 的 `platforms` 移除。换行业时同时调整查询、主体和规则；来源失败见 `queryReports`。
+仓库的监测配置包含 `sogou_wechat`（2026-09 实测稳定，服务端已默认启用，作为轮换固定成员；微博匿名同月停用移除）。换行业时同时调整查询、主体和规则；来源失败见 `queryReports`。
 
 上述命令与 Windows 的 `scripts/run_monitor_tick.cmd` **只做采集监测，不执行 Agent**。脚本优先使用同级 `signalx-agent/.venv/Scripts/python.exe`，否则使用 PATH 的 `python`。定期执行需自行配置调度器，不会自动注册任务。
 
@@ -124,9 +124,11 @@ Invoke-RestMethod -Method POST `
 
 ## 各来源启用与配置要点
 
-### 微博：匿名 + 临时授权
+### 微博：匿名已停用，授权模式保留
 
-匿名开箱即用（显式 `platforms:["weibo"]`）。授权模式（匿名不稳时的过渡方案）：
+**2026-09 决定：匿名模式停用**——实测基本不可用（`parser_changed` 频发），已从监测配置
+`queries.json` 移除；代码保留，显式 `platforms:["weibo"]` 仍可机会性使用，但不要依赖。
+授权模式（过渡方案）：
 
 ```powershell
 $env:WEIBO_MODE="legacy_authorized"
@@ -141,7 +143,7 @@ python -m crawler_tool.interfaces.app --serve
 ### 微信：授权通道停用，搜狗发现源为主渠道
 
 - `WECHAT_MODE` 不配置即为停用（代码保留不删）；实时通道自 2026-07-30 起被平台 200013 能力控制；
-- **搜狗发现源需显式启用**（`SOGOU_WECHAT_MODE=anonymous_best_effort`）：
+- **搜狗发现源：服务端默认启用**（`SOGOU_WECHAT_MODE=disabled` 可显式关闭）：
   只有文章发现（标题/公众号/时间/摘要/包装链），包装链不解析、无正文、验证码即停不重试；
 - 微信内容的另一通道是**手动捕获投喂**（浏览器助手 v0.3.0 支持公众号后台），
   `platforms:["wechat"]` 的统一搜索会返回会话历史中的捕获条目；
@@ -161,7 +163,9 @@ python -m crawler_tool.interfaces.app --serve
 
 ### 搜狗微信：公开索引发现
 
-默认禁用。在启动服务的终端设置，已有服务需重启；未启用时从监测平台列表移除该来源。
+服务端默认启用（2026-09 起，实测稳定）。如需关闭，在启动服务的终端设
+`SOGOU_WECHAT_MODE=disabled`（已有服务需重启）；关闭后该来源返回 `source_unavailable`，
+需从 `queries.json` 的 `platforms` 临时移除。
 
 ```powershell
 $env:SOGOU_WECHAT_MODE="anonymous_best_effort"
