@@ -55,6 +55,7 @@ class EventChainTool:
                   + json.dumps(EventChainDraftBatch.model_json_schema(by_alias=True), ensure_ascii=False)
                   + "\n输入：\n" + json.dumps(context, ensure_ascii=False))
         feedback = ""
+        last_error: Exception | None = None
         for _ in range(self.max_attempts):
             try:
                 batch = EventChainDraftBatch.model_validate(generate_json(
@@ -62,7 +63,8 @@ class EventChainTool:
                 return self._materialize(batch, request)
             except (ValidationError, ValueError, TypeError) as exc:
                 feedback = "\n请修正上次输出：\n" + validation_feedback(exc)
-        raise EventChainToolError("事件关联未通过引用、时间或结构校验")
+                last_error = exc
+        raise EventChainToolError(f"事件关联未通过引用、时间或结构校验（{type(last_error).__name__}: {last_error}）")
 
     @classmethod
     def _materialize(cls, batch: EventChainDraftBatch, request: EventChainRequest) -> EventChainResult:

@@ -74,3 +74,39 @@ class LLMConfigTests(unittest.TestCase):
     def test_key_is_not_interpolated(self):
         self.env_file.write_text("DEEPSEEK_API_KEY='literal-${UNSET_VARIABLE}'\n", encoding="utf-8")
         self.assertEqual(DeepSeekLLM().api_key, "literal-${UNSET_VARIABLE}")
+
+
+class OutputTokenGuardTests(unittest.TestCase):
+    """max_tokens 显式上限与截断检测：截断必须是可诊断错误而非静默解析失败。"""
+
+    def test_default_max_output_tokens_is_8192(self):
+        client = DeepSeekLLM(api_key="test-only-key")
+        self.assertEqual(client.max_output_tokens, 8192)
+
+    def test_truncated_output_raises_diagnostic_error(self):
+        from types import SimpleNamespace
+
+        client = DeepSeekLLM(api_key="test-only-key")
+        fake_response = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="length", message=SimpleNamespace(content='{"events": ['),
+        )])
+        captured: dict = {}
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return fake_response
+
+        class FakeChat:
+            completions = FakeCompletions()
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.chat = FakeChat()
+
+        with patch("openai.OpenAI", FakeClient):
+            with self.assertRaises(ValueError) as ctx:
+                client.generate_json("系统提示", "用户提示")
+        self.assertIn("截断", str(ctx.exception))
+        self.assertEqual(captured["max_tokens"], 8192)
+        self.assertEqual(captured["temperature"], 0)

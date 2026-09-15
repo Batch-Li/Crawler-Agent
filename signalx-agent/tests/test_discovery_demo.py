@@ -20,7 +20,7 @@ class DiscoveryDemoTests(unittest.TestCase):
             sys.executable, "-B", "-m", "agent.discovery_demo",
             "examples/discovery/evidence.json", "--replay", "examples/discovery/responses.json",
             "--output-dir", str(target), *extra,
-        ], cwd=ROOT, capture_output=True, text=True, timeout=15)
+        ], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15)
 
     def test_offline_demo_saves_rounds_and_matches_expected_grouping(self):
         with tempfile.TemporaryDirectory() as tmp:

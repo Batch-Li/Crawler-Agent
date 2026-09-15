@@ -30,13 +30,15 @@ class EventMergeTool:
         prompt = ('输出 JSON Schema：\n' + json.dumps(EventMergeBatch.model_json_schema(by_alias=True), ensure_ascii=False)
                   + '\n输入：\n' + json.dumps({'events': [e.model_dump(mode='json', by_alias=True) for e in events]}, ensure_ascii=False))
         feedback = ''
+        last_error: Exception | None = None
         for _ in range(self.max_attempts):
             try:
                 batch = EventMergeBatch.model_validate(generate_json(self.llm, EVENT_MERGE_SYSTEM_PROMPT, prompt + feedback))
                 return self.materialize(events, batch)
             except (ValidationError, ValueError, TypeError) as exc:
                 feedback = '\n修正上次输出：\n' + validation_feedback(exc)
-        raise EventMergeToolError('同一事件复核未通过校验')
+                last_error = exc
+        raise EventMergeToolError(f'同一事件复核未通过校验（{type(last_error).__name__}: {last_error}）')
 
     @staticmethod
     def materialize(events: list[Event], batch: EventMergeBatch) -> list[Event]:

@@ -109,6 +109,7 @@ class EventDiscoveryWorkflow:
                 filtered_evidence=list(filtered.values()), unreviewed_evidence=list(unreviewed.values()),
                 unresolved_questions=list(dict.fromkeys([
                     *unresolved_questions, *snapshot.chain_unresolved_questions,
+                    *snapshot.merge_notices,
                     *(question for chain in snapshot.chains for question in chain.unresolved_questions),
                 ])),
                 unlinked_event_ids=snapshot.unlinked_event_ids,

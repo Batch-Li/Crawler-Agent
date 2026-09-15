@@ -11,7 +11,8 @@ from .tool_models import (
     EventExtractionRequest,
 )
 from .tools import EventChainTool, EventClassificationTool, EventExtractionTool
-from .tools.event_merge import EventMergeTool
+from .tools.event_merge import EventMergeTool, EventMergeToolError
+from .tools.event_chain import EventChainToolError
 from .event_time import ground_event_time, refresh_event_evidence
 from .workflow_models import EventClassification, EventProcessingResult
 
@@ -71,8 +72,13 @@ class SignalXEventProcessor:
             )).events
         events = [ground_event_time(self.entity_resolver.normalize(event), allow_fallback=time_fallback)
                   for event in events]
+        merge_notices: list[str] = []
         if self.merger:
-            events = self.merger.invoke(events)
+            try:
+                events = self.merger.invoke(events)
+            except EventMergeToolError as exc:
+                # 合并是增强步骤：失败时保留未合并事件继续分类/串联，不丢弃抽取结果。
+                merge_notices = [f'事件合并未完成（{exc}），本次保留独立事件，重复条目待人工辨别。']
         previous_by_id = {item.event_id: item for item in previous.events}
         classifications = {item.event_id: item for item in previous.classifications}
         changed = [event for event in events if (
@@ -90,20 +96,28 @@ class SignalXEventProcessor:
         enriched_events = self._attach_event_types(
             events, ordered_classifications,
         )
-        chains = self.chain_builder.invoke(
-            EventChainRequest(
-                events=enriched_events,
-                classifications=ordered_classifications,
-                industry=industry,
-                previous_chains=previous.chains,
+        chain_notices: list[str] = []
+        try:
+            chains = self.chain_builder.invoke(
+                EventChainRequest(
+                    events=enriched_events,
+                    classifications=ordered_classifications,
+                    industry=industry,
+                    previous_chains=previous.chains,
+                )
             )
-        )
+            chain_result = (chains.chains, chains.unlinked_event_ids, chains.unresolved_questions)
+        except EventChainToolError as exc:
+            # 串联也是增强步骤：失败时输出独立事件（无链），公告进待核实清单。
+            chain_notices = [f'事件链生成未完成（{exc}），本次仅输出独立事件，关联关系待人工梳理。']
+            chain_result = ([], [], [])
         return EventProcessingResult(
             events=enriched_events,
             classifications=ordered_classifications,
-            chains=chains.chains,
-            unlinked_event_ids=chains.unlinked_event_ids,
-            chain_unresolved_questions=chains.unresolved_questions,
+            chains=chain_result[0],
+            unlinked_event_ids=chain_result[1],
+            chain_unresolved_questions=chain_result[2],
+            merge_notices=[*merge_notices, *chain_notices],
         )
 
     @staticmethod

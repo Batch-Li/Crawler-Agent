@@ -135,6 +135,8 @@ class EventProcessingResult(SchemaModel):
     chains: list[EventChain] = Field(default_factory=list)
     unlinked_event_ids: list[str] = Field(default_factory=list)
     chain_unresolved_questions: list[str] = Field(default_factory=list)
+    # 增强步骤失败时保留主结果的说明（如事件合并失败，仍保留未合并事件）。
+    merge_notices: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_event_references(self) -> "EventProcessingResult":

@@ -107,6 +107,7 @@ class DeepSeekLLM:
         base_url: str | None = None,
         model_name: str = "deepseek-chat",
         timeout: float = 60.0,
+        max_output_tokens: int = 8192,
     ) -> None:
         # 固定读取项目配置，不修改进程环境，也不展开密钥中的 ${...}。
         config = dotenv_values(_ENV_FILE, encoding="utf-8-sig", interpolate=False)
@@ -117,6 +118,9 @@ class DeepSeekLLM:
         )
         self.model_name = model_name
         self.timeout = timeout
+        # 合并/串联的提示词嵌入全文证据，模型输出长 JSON 时默认上限可能截断，
+        # 显式抬高并检测 finish_reason，让截断成为可诊断错误而非静默解析失败。
+        self.max_output_tokens = max_output_tokens
 
         if not self.api_key or not self.api_key.strip():
             raise ValueError("请在项目 .env 或环境变量中配置 DEEPSEEK_API_KEY")
@@ -142,8 +146,15 @@ class DeepSeekLLM:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0,
+            max_tokens=self.max_output_tokens,
         )
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        if choice.finish_reason == "length":
+            raise ValueError(
+                f"模型输出在 {self.max_output_tokens} tokens 处被截断（finish_reason=length），"
+                "JSON 不完整；请增大 max_output_tokens 或缩小输入。"
+            )
+        content = choice.message.content
         if not content:
             raise ValueError("模型返回了空响应")
         return parse_json_object(content)
