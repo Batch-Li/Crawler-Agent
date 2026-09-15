@@ -98,6 +98,8 @@ POST /api/v1/tool/search-content          # 统一搜索；显式 wechat/xiaohon
                                           # 时改读本会话历史；body 加 "enrichTime":true
                                           # 或 "enrichContent":true 启用详情页补全
                                           # （一次 GET 同时取时间与正文，共享 ≤5 条/轮预算；南周/央视支持）
+                                          # 实时结果会按 content_id 用会话库全文版自动升级；
+                                          # 全文条目不被后来的摘要捕获降级
 POST /api/v1/tool/search-wechat-articles  # 微信关键词实时检索（当前 200013 受限）
 
 捕获队列（服务端持久化 data/capture_queue.json）：
