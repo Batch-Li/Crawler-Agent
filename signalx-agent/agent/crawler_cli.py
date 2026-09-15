@@ -57,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:
                            help="对缺正文条目做有边界详情页补抓（与 --enrich-time 共享预算与请求，南周/央视支持）")
     discovery.add_argument("--push-capture-queue", action="store_true",
                            help="运行后把已执行与未完成查询推送到捕获队列，供小红书/抖音人工捕获闭环")
+    discovery.add_argument("--trigger-capture", action="store_true",
+                           help="运行结束后同步触发浏览器自动化补采（小红书消费队列 + 头条补正文；"
+                                "受脚本内置硬限与即停自锁约束，可能拖长运行数分钟并弹出浏览器窗口）")
     monitor = commands.add_parser("monitor", help="只执行一次采集、监测、告警扩展")
     monitor.add_argument("--config-dir", type=Path, required=True)
     monitor.add_argument("--data-dir", type=Path, required=True, help="持续使用的监测状态目录")
@@ -107,6 +110,13 @@ def main(argv: list[str] | None = None) -> int:
                 summary.update(push_capture_queue(
                     base_url=args.base_url, queries=_capture_queue_queries(result),
                 ))
+            if args.trigger_capture:
+                from agent.capture_trigger import trigger_browser_capture
+
+                outcome = trigger_browser_capture(base_url=args.base_url)
+                summary["captureTrigger"] = outcome
+                for entry in outcome:
+                    print(f"[补采] {entry.get('platform')}: {entry.get('exit', entry.get('note', ''))}")
             print(json.dumps(summary, ensure_ascii=False))
             return 0 if result.stop_reason == StopReason.COMPLETED else 2
 
