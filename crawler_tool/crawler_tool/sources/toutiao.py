@@ -20,7 +20,7 @@ class ToutiaoAdapter(SourceAdapter):
     """Parser-first Toutiao search adapter without embedded credentials."""
 
     platform = "toutiao"
-    adapter_version = "0.3.0"
+    adapter_version = "0.4.0"
 
     def __init__(self, http_get: Any | None = None, *, clock: datetime | None = None) -> None:
         self.http_get = http_get
@@ -170,6 +170,59 @@ class ToutiaoAdapter(SourceAdapter):
             next_cursor=next_continuation,
         )
 
+    def parse_payload(self, payload: Any) -> AdapterResult:
+        """捕获通道：只识别浏览器自动化的文章详情信封（正文回填）。
+
+        信封契约（scripts/browser_auto/toutiao_browser_capture.py 产出）：
+        {"captureType": "toutiao_article_detail", "articleId", "url",
+         "title", "content", "publishTime"(ISO, 可选), "author"(可选)}
+        直连 HTTP 拿不到头条文章页（JS 虚拟机挑战墙），正文只来自真实浏览器。
+        """
+        if not isinstance(payload, dict):
+            return AdapterResult(status=SourceStatus.PARSER_CHANGED, error_code=SourceErrorCode.PARSER_CHANGED, message="Toutiao capture is not an object", retryable=False)
+        if payload.get("captureType") != "toutiao_article_detail":
+            return AdapterResult(status=SourceStatus.PARSER_CHANGED, error_code=SourceErrorCode.PARSER_CHANGED, message="Unrecognized toutiao capture envelope", retryable=False)
+        title = str(payload.get("title") or "").strip()
+        content = str(payload.get("content") or "").strip()
+        url = str(payload.get("url") or "").strip()
+        article_id = str(payload.get("articleId") or "").strip() or (_source_id(url) or "")
+        if not (title and content and article_id):
+            return AdapterResult(status=SourceStatus.PARSER_CHANGED, error_code=SourceErrorCode.PARSER_CHANGED, message="Toutiao detail capture missing title/content/articleId", retryable=False)
+        if len("".join(content.split())) < 40:
+            return AdapterResult(status=SourceStatus.EMPTY, message="captured article body is too short to be full text")
+        published_iso = None
+        published_confidence = 0.0
+        raw_time = str(payload.get("publishTime") or "").strip()
+        if raw_time:
+            try:
+                published_iso = datetime.fromisoformat(raw_time).astimezone(timezone.utc).isoformat()
+                published_confidence = 0.9  # 文章页展示的原生发布时间
+            except ValueError:
+                pass
+        item = RawItem(
+            platform=self.platform,
+            raw_data_ref=f"raw/toutiao/{article_id}.html",
+            payload={
+                "sourceItemId": article_id,
+                "sourceType": "news_media",
+                "contentType": "article",
+                "title": title,
+                "summary": content[:120],
+                "content": content,
+                "url": url or f"https://www.toutiao.com/article/{article_id}/",
+                "author": {"name": str(payload.get("author") or "") or None},
+                "publishedAt": published_iso,
+                "metrics": {},
+                "method": "browser",
+                "adapterVersion": self.adapter_version,
+                "hasFullContent": True,
+                "publishedAtConfidence": published_confidence,
+                "warnings": ["content_from_browser_auto"],
+                "ext": {"captureType": "toutiao_article_detail"},
+            },
+        )
+        return AdapterResult(items=[item], status=SourceStatus.SUCCESS)
+
 
 def _next_page_continuation(tree: Any, page_number: int) -> str | None:
     for href in tree.xpath('//a[@href]/@href'):
@@ -316,6 +369,11 @@ def _extract_target_url(href: str, *, max_hops: int = 3) -> str | None:
 
 
 def _source_id(url: str) -> str | None:
+    # 兼容 /a{id}（搜索结果）与 /article/{id}（规范文章页）两种形态；
+    # 此前只认 /数字，/a 前缀 URL 全部落到合成 ID。
+    match = re.search(r"/(?:a|article/)(\d{6,})(?:[/?#]|$)", url)
+    if match:
+        return match.group(1)
     match = re.search(r"/(\d{6,})(?:[/?#]|$)", url)
     return match.group(1) if match else None
 

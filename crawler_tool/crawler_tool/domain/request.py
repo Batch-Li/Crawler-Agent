@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .content_item import Platform
 
 
-CapturePlatform = Literal["xiaohongshu", "douyin", "wechat"]
+CapturePlatform = Literal["xiaohongshu", "douyin", "wechat", "toutiao"]
 
 
 class CaptureIngestRequest(BaseModel):

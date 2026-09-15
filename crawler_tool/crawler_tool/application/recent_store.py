@@ -25,11 +25,26 @@ class RecentItemsStore:
                 key = item.content_id
                 existing = self._index.get(key)
                 if existing is not None:
+                    current = self._items[existing]
+                    # 不降级：库存全文条目（如浏览器自动化回填的正文）不被后来的
+                    # 摘要捕获覆盖；全文是超集，完整性优先于新鲜度。
+                    if self._is_full(current) and not self._is_full(item):
+                        continue
                     # Replace prior occurrence, refreshing recency.
                     del self._items[existing]
                     self._reindex()
                 self._items.append(item)
                 self._index[key] = len(self._items) - 1
+
+    @staticmethod
+    def _is_full(item) -> bool:
+        return bool(getattr(getattr(item, "quality", None), "has_full_content", False))
+
+    def get(self, content_id: str):
+        """按 content_id 取当前条目（同 ID 替换语义下即最新版本）；无则 None。"""
+        with self._lock:
+            index = self._index.get(content_id)
+            return self._items[index] if index is not None else None
 
     def query(self, *, platform: str | None = None, keyword: str | None = None, limit: int = 50) -> list:
         with self._lock:

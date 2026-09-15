@@ -143,6 +143,17 @@ class CrawlService:
             adapter_version=adapter_version,
         )
 
+    def _upgrade_from_store(self, item):
+        """同一 content_id 的库存条目若带全文而实时结果只有摘要，用库存版本替换。"""
+        stored = self.recent_store.get(item.content_id)
+        if stored is None or stored.content_id != item.content_id:
+            return item
+        stored_full = bool(getattr(getattr(stored, "quality", None), "has_full_content", False))
+        live_full = bool(getattr(getattr(item, "quality", None), "has_full_content", False))
+        if stored_full and not live_full:
+            return stored
+        return item
+
     def search(self, request: ContentSearchRequest) -> ContentSearchResponse:
         request_id = f"req_{id(request):x}"
         platforms = list(request.platforms) if request.platforms is not None else self.registry.defaults()
@@ -291,6 +302,9 @@ class CrawlService:
             finally:
                 if adapter is not None:
                     adapter.close()
+        # 会话库升级：同一 content_id 的库存条目若已有全文（如浏览器自动化回填），
+        # 用它替换实时摘要条目，让补抓内容进入证据流；无库存副本时原样返回。
+        items = [self._upgrade_from_store(item) for item in items]
         # 详情页补全（时间/正文）：只作用于本次响应（截断后）的条目，失败不进 SourceReport。
         final_items = _balanced_truncate(items, request.limit)
         if (request.enrich_time or request.enrich_content) and final_items:

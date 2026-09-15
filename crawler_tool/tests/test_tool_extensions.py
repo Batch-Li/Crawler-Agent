@@ -23,6 +23,6 @@ def test_source_health_reports_registered_real_sources():
     assert response.status_code == 200
     assert response.json() == {"sources": [
         {"platform": "south_weekend", "status": "unknown", "adapter_version": "0.3.0-ssr", "capabilities": ["search"], "pagination": "unverified"},
-        {"platform": "toutiao", "status": "unknown", "adapter_version": "0.3.0", "capabilities": ["search", "pagination"], "pagination": "fixture_verified"},
+        {"platform": "toutiao", "status": "unknown", "adapter_version": "0.4.0", "capabilities": ["search", "pagination"], "pagination": "fixture_verified"},
         {"platform": "weibo", "status": "unknown", "adapter_version": "0.2.0-anonymous", "capabilities": ["search"], "pagination": "disabled", "authMode": "anonymous_best_effort"},
     ]}

@@ -6,6 +6,7 @@ from crawler_tool.application.recent_store import RecentItemsStore
 from crawler_tool.domain import CaptureIngestRequest, ContentSearchResponse, SourceReport, SourceStatus
 from crawler_tool.normalization.content_normalizer import normalize_raw_item
 from crawler_tool.sources.douyin import DouyinAdapter
+from crawler_tool.sources.toutiao import ToutiaoAdapter
 from crawler_tool.sources.wechat_authorized import WechatAuthorizedListAdapter
 from crawler_tool.sources.xiaohongshu import XiaohongshuAdapter
 
@@ -30,6 +31,7 @@ class CaptureIngestService:
             "xiaohongshu": XiaohongshuAdapter,
             "douyin": DouyinAdapter,
             "wechat": WechatAuthorizedListAdapter,
+            "toutiao": ToutiaoAdapter,
         }
         self.store = store if store is not None else RecentItemsStore()
 
