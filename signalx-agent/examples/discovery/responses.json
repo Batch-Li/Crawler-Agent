@@ -13,6 +13,12 @@
       }
     ]}
   },
+  {"stage": "grounding", "response": {"reviews": [{
+    "eventId": "evt_d9f1e06973419c6a3060",
+    "evidenceAssessments": [{"evidenceId": "evd_demo_1", "quote": "甲公司发布客服产品 A", "stance": "support", "reason": "公告直接说明发布动作"}],
+    "timeCandidates": [{"role": "occurrence", "anchor": {"evidenceId": "evd_demo_1", "quote": "2026年9月1日北京时间9点，甲公司发布客服产品 A"}}]
+  }]}},
+  {"stage": "grounding_audit", "response": {"corrections": [], "revisions": []}},
   {
     "stage": "classification",
     "response": {"classifications": [
@@ -43,6 +49,19 @@
     ]}
   },
   {"stage": "merge", "response": {"groups": []}},
+  {"stage": "grounding", "response": {"reviews": [
+    {"eventId": "evt_d9f1e06973419c6a3060",
+     "evidenceAssessments": [
+       {"evidenceId": "evd_demo_1", "quote": "甲公司发布客服产品 A", "stance": "support", "reason": "发布公告"},
+       {"evidenceId": "evd_demo_2", "quote": "客服产品 A 上线，甲公司补充功能说明", "stance": "support", "reason": "同一次发布的补充报道"}],
+     "timeCandidates": [
+       {"role": "occurrence", "anchor": {"evidenceId": "evd_demo_1", "quote": "2026年9月1日北京时间9点，甲公司发布客服产品 A"}},
+       {"role": "occurrence", "anchor": {"evidenceId": "evd_demo_2", "quote": "甲公司确认客服产品 A 于9月1日北京时间9点发布"}}]},
+    {"eventId": "evt_e8a124b1514140f7a946",
+     "evidenceAssessments": [{"evidenceId": "evd_demo_3", "quote": "甲公司下调客服产品 A 价格", "stance": "support", "reason": "调价公告"}],
+     "timeCandidates": [{"role": "occurrence", "anchor": {"evidenceId": "evd_demo_3", "quote": "2026年9月2日UTC时间2点，甲公司将前一天发布的客服产品 A 月费由100元降至80元"}}]}
+  ]}},
+  {"stage": "grounding_audit", "response": {"corrections": [], "revisions": []}},
   {
     "stage": "classification",
     "response": {"classifications": [
@@ -72,6 +91,10 @@
       "unresolvedQuestions": [],
       "matchedChainId": null
     }], "unresolvedQuestions": []}
+  },
+  {
+    "stage": "relation_review",
+    "response": {"reviews": [{"relationId": "0:0", "decision": "keep", "reason": "调价原文明确指向前一天发布的同一产品。"}]}
   },
   {
     "stage": "planning",

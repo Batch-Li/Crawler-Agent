@@ -14,7 +14,7 @@ from agent.workflow_models import (
     EventClassification, EventProcessingResult, QueryPlan, StopReason, WorkflowRequest,
 )
 from tests.test_workflow import FakeCollector, FakePlanner, FakeProcessor
-from tests.test_event_tools import chain_response
+from tests.test_event_tools import chain_response, review_response, grounding_response, catalog_events
 
 
 def evidence(key="evd_1", title="甲公司发布产品 A", **kwargs):
@@ -53,6 +53,12 @@ class LocalLLM:
 
     def generate_json(self, system_prompt, user_prompt):
         self.calls.append((system_prompt, user_prompt))
+        if '事件依据的独立反例审查员' in system_prompt:
+            return {'corrections': [], 'revisions': []}
+        if '事件证据与时间复核工具' in system_prompt:
+            return grounding_response(user_prompt)
+        if '关系语义复核工具' in system_prompt:
+            return review_response(user_prompt)
         if "查询规划器" in system_prompt:
             return self.plan_responses.pop(0)
         context = json.JSONDecoder().raw_decode(user_prompt.split("输入：\n", 1)[1])[0]
@@ -66,7 +72,7 @@ class LocalLLM:
                 return result
             return {"events": [draft(Evidence.model_validate(item)) for item in context["evidence"]]}
         if "事件关联工具" in system_prompt:
-            return chain_response([Event.model_validate(e) for e in context["events"]])
+            return chain_response(catalog_events(context))
         return {"classifications": [
             {"eventId": item["eventId"], "category": self.category, "confidence": .9}
             for item in context["events"]
@@ -162,10 +168,10 @@ class RegressionTests(unittest.TestCase):
         result = EventDiscoveryWorkflow(
             FakeCollector({"查询一": [evidence()], "查询二": [evidence("evd_2", "甲公司发布产品 B")]}),
             SignalXEventProcessor.from_llm(llm), planner("查询一", "查询二"),
-        ).run(request(maxLlmCalls=3))
+        ).run(request(maxLlmCalls=4))
         self.assertEqual(result.stop_reason, StopReason.MODEL_BUDGET_EXHAUSTED)
-        self.assertEqual(result.llm_calls, 3)
-        self.assertEqual(len(llm.calls), 3)
+        self.assertEqual(result.llm_calls, 4)
+        self.assertEqual(len(llm.calls), 4)
         self.assertEqual(len(result.events), 1)
         self.assertEqual(result.unprocessed_evidence_ids, ["evd_2"])
         self.assertEqual(result.rounds[-1].processing_status, "failed")

@@ -83,6 +83,10 @@ class LLMQueryPlanner:
             )
         context = {
             "phase": "next_round",
+            "topic": request.topic,
+            "topicAliases": request.topic_aliases,
+            "targetEvidenceCount": request.target_evidence_count,
+            "currentEvidenceCount": len({e.evidence_id for event in snapshot.events for e in event.evidence}),
             "industry": request.industry,
             "mode": request.mode.value,
             "completedRound": round_index,
@@ -96,6 +100,10 @@ class LLMQueryPlanner:
                     "eventTypes": event.event_types,
                     "entities": event.entities,
                     "eventDate": event.event_date.model_dump() if event.event_date else None,
+                    "dateStatus": event.date_status,
+                    "claimType": event.claim_type,
+                    "targetDate": event.target_date.model_dump() if event.target_date else None,
+                    "reportDate": event.report_date.model_dump() if event.report_date else None,
                     "timeWarnings": event.time_warnings,
                     "evidenceCount": len(event.evidence),
                 }
@@ -110,6 +118,13 @@ class LLMQueryPlanner:
             ],
             "chainUnresolvedQuestions": snapshot.chain_unresolved_questions,
             "unlinkedEventIds": snapshot.unlinked_event_ids,
+            "evidenceGaps": {
+                "summaryOnly": sum(e.has_full_content is False for e in {e.evidence_id: e for event in snapshot.events for e in event.evidence}.values()),
+                "missingEventDate": sum(not (e.event_date or e.event_time) for e in snapshot.events),
+                "conflictingEventDates": sum(e.date_status == 'conflicting' for e in snapshot.events),
+                "missingEventYear": sum(e.event_date is not None and e.event_date.value.startswith('--') for e in snapshot.events),
+                "sourceNames": sorted({e.source_name or e.source for event in snapshot.events for e in event.evidence}),
+            },
         }
         return self._generate_plan(context)
 

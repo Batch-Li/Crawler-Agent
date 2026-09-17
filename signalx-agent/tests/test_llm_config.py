@@ -3,6 +3,8 @@
 import os
 import tempfile
 import unittest
+import json
+from types import SimpleNamespace
 from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +13,22 @@ from agent.llm import DeepSeekLLM
 
 
 class LLMConfigTests(unittest.TestCase):
+    def test_requests_json_mode_logs_only_response_and_rejects_truncation(self):
+        log = Path(self.directory.name) / 'model_responses.jsonl'
+        response = SimpleNamespace(model='fixture', usage=None, choices=[SimpleNamespace(
+            finish_reason='stop', message=SimpleNamespace(content='{"events": []}'))])
+        with patch('openai.OpenAI') as factory:
+            call = factory.return_value.chat.completions.create
+            call.return_value = response
+            llm = DeepSeekLLM(api_key='PRIVATE_TEST_VALUE', response_log=log)
+            self.assertEqual(llm.generate_json('输出 JSON', '测试'), {'events': []})
+            self.assertEqual(call.call_args.kwargs['response_format'], {'type': 'json_object'})
+            self.assertEqual(call.call_args.kwargs['max_tokens'], 8192)
+            self.assertNotIn('PRIVATE_TEST_VALUE', log.read_text())
+            self.assertEqual(json.loads(log.read_text())['finishReason'], 'stop')
+            response.choices[0].finish_reason = 'length'
+            with self.assertRaisesRegex(ValueError, '截断'):
+                llm.generate_json('输出 JSON', '测试')
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

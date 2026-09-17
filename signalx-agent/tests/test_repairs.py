@@ -15,7 +15,7 @@ from agent.tools import EventChainTool, EventMergeTool, EventExtractionToolError
 from agent.tools.event_extraction import EventExtractionTool
 from agent.workflow_models import EventProcessingResult, StopReason
 from crawler_tool.monitoring.agent_bridge import item_to_evidence
-from tests.test_event_tools import QueueLLM, chain_response, evidence
+from tests.test_event_tools import QueueLLM, chain_response, evidence, catalog_events
 from tests.test_regressions import LocalLLM, planner, request
 from tests.test_workflow import FakeCollector
 
@@ -70,8 +70,11 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(event.event_time.isoformat(), '2026-09-01T01:30:00+00:00')
         self.assertIsNone(event.event_date)
 
-    def test_ambiguous_relative_or_yearless_time_remains_unknown(self):
-        for text in ('9月7日12:08预订', '今天发布', '2024年9月发布，2024年10月开售'):
+    def test_ambiguous_relative_time_unknown_yearless_keeps_month_day(self):
+        partial = ground_event_time(timed('9月7日12:08预订', attempted=None))
+        self.assertIsNone(partial.event_time)
+        self.assertEqual(partial.event_date, PartialDate(value='--09-07', precision='month_day'))
+        for text in ('今天发布', '2024年9月发布，2024年10月开售'):
             event = ground_event_time(timed(text, attempted=None))
             self.assertIsNone(event.event_time)
             self.assertIsNone(event.event_date)
@@ -179,7 +182,7 @@ class RepairTests(unittest.TestCase):
                 if '同一事件复核工具' in system:
                     self.calls.append((system, user))
                     context = json.loads(user.split('输入：\n', 1)[1])
-                    return group([Event.model_validate(e) for e in context['events']])
+                    return group(catalog_events(context))
                 return super().generate_json(system, user)
         llm = Model()
         workflow = EventDiscoveryWorkflow(FakeCollector({'查询一': [evidence('one', '产品发布')],
@@ -190,7 +193,7 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(len(result.events), 1)
         self.assertEqual(result.events[0].event_id, result.rounds[0].snapshot.events[0].event_id)
         self.assertEqual(len(result.events[0].merged_event_ids), 1)
-        self.assertEqual(result.llm_calls, 5)
+        self.assertEqual(result.llm_calls, 9)
 
     def test_bridge_preserves_provenance_without_labeling_summary_as_body(self):
         mapped = item_to_evidence({'contentId': 'id', 'title': '标题', 'platform': 'toutiao', 'content': '搜索摘要',
@@ -212,7 +215,8 @@ class RepairTests(unittest.TestCase):
     def test_timeline_is_readable_partial_dates_and_refuses_overwrite(self):
         snapshot = EventProcessingResult(events=[ground_event_time(timed('该产品于2024年9月推出。', anchor=False))])
         text = render_timeline(snapshot, note='真实数据离线修复；非新增真实模型验收')
-        self.assertIn('2024-09（仅知月）', text)
+        self.assertIn('2024-09', text)
+        self.assertNotIn('仅知月', text)
         self.assertNotIn('2024-09-01', text)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'timeline.md'

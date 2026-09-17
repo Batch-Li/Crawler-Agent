@@ -39,7 +39,28 @@ class QueueLLM:
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         self.calls += 1
+        if '事件依据的独立反例审查员' in system_prompt and not (self.responses and 'corrections' in self.responses[0]):
+            return {'corrections': [], 'revisions': []}
+        if '事件证据与时间复核工具' in system_prompt and not (self.responses and 'reviews' in self.responses[0]):
+            return grounding_response(user_prompt)
+        if '关系语义复核工具' in system_prompt and not (self.responses and 'reviews' in self.responses[0]):
+            return review_response(user_prompt)
         return self.responses.pop(0)
+
+
+def review_response(user_prompt):
+    """旧结构测试显式假定语义检查通过；语义拒绝场景另用固定响应验证。"""
+    data = json.JSONDecoder().raw_decode(user_prompt.split('输入：\n', 1)[1])[0]
+    return {'reviews': [{'relationId': row['relationId'], 'decision': 'keep',
+                         'reason': '模拟复核通过，非真实模型质量评测。'} for row in data['relations']]}
+
+
+def grounding_response(user_prompt):
+    """流水线夹具只提供结构响应；时间与立场质量由独立标注案例验证。"""
+    events = json.JSONDecoder().raw_decode(user_prompt.split('输入：\n', 1)[1])[0]
+    return {'reviews': [{'eventId': e['eventId'], 'timeCandidates': [], 'evidenceAssessments': [
+        {'evidenceId': x['evidenceId'], 'quote': x.get('title') or x.get('content') or x['snippet'],
+         'stance': 'support', 'reason': '结构测试夹具'} for x in e['evidence']]} for e in events]}
 
 
 def chain_response(events: list[Event], relation_type="RELATED") -> dict[str, Any]:
@@ -57,12 +78,24 @@ def chain_response(events: list[Event], relation_type="RELATED") -> dict[str, An
     }]}
 
 
+def catalog_events(context):
+    return [Event.model_validate({**{k: v for k, v in e.items() if k != 'evidenceIds'},
+                                  'evidence': [context['sources'][key] for key in e['evidenceIds']]})
+            for e in context['events']]
+
+
 class ProcessorLLM:
     """根据 Prompt 类型生成合法响应，用于验证完整组合链路。"""
 
     model_name = "processor-fake-model"
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        if '事件依据的独立反例审查员' in system_prompt:
+            return {'corrections': [], 'revisions': []}
+        if '事件证据与时间复核工具' in system_prompt:
+            return grounding_response(user_prompt)
+        if '关系语义复核工具' in system_prompt:
+            return review_response(user_prompt)
         if "同一事件复核工具" in system_prompt:
             return {"groups": []}
         if "事件抽取工具" in system_prompt:
@@ -88,7 +121,7 @@ class ProcessorLLM:
             }
         if "事件关联工具" in system_prompt:
             context = json.JSONDecoder().raw_decode(user_prompt.split("输入：\n", 1)[1])[0]
-            return chain_response([Event.model_validate(e) for e in context["events"]])
+            return chain_response(catalog_events(context))
         event_ids = list(dict.fromkeys(re.findall(r"evt_[0-9a-f]{20}", user_prompt)))
         return {
             "classifications": [
@@ -253,7 +286,7 @@ class EventToolTests(unittest.TestCase):
         )
         self.assertIn("甲公司", result.chains[0].title)
         self.assertEqual(result.unlinked_event_ids, ["evt_other"])
-        self.assertEqual(llm.calls, 1)
+        self.assertEqual(llm.calls, 2)
 
     def test_processor_runs_tools_and_attaches_primary_category(self) -> None:
         processor = SignalXEventProcessor.from_llm(

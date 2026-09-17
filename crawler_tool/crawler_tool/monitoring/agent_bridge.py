@@ -38,7 +38,7 @@ def item_to_evidence(item: dict[str, Any]) -> dict[str, Any]:
         "content": None if quality.get("hasFullContent") is False else item.get("content"),
         "dedupKey": item.get("dedupKey") or dedup.get("dedupKey"),
         "hasFullContent": quality.get("hasFullContent"),
-        "sourceName": ext.get("sourceName"),
+        "sourceName": ext.get("sourceName") or ext.get("accountName"),
         "qualityWarnings": quality.get("warnings") or [],
     }
 
@@ -95,11 +95,22 @@ class SearchContentCollectionTool:
         base_url: str = "http://127.0.0.1:8301",
         platforms: list[str] | None = None,
         timeout: float = 30.0,
+        max_pages: int = 1,
+        max_requests: int = 60,
+        archive_path: str | Path | None = None,
     ) -> None:
         self._search_fn = search_fn
         self._base_url = base_url.rstrip("/")
         self._platforms = platforms
         self._timeout = timeout
+        if not 1 <= max_pages <= 10 or not 1 <= max_requests <= 500:
+            raise ValueError("分页或请求预算超出允许范围")
+        self.max_pages = max_pages
+        self.max_requests = max_requests
+        self.request_count = 0
+        self.archive_path = Path(archive_path) if archive_path else None
+        self.collected_items: dict[str, dict[str, Any]] = {}
+        self.blocked_sources: dict[str, str] = {}
 
     def search(self, request: Any) -> list[dict[str, Any]]:
         return self.search_with_reports(request)["evidence"]
@@ -108,10 +119,16 @@ class SearchContentCollectionTool:
         """保留来源状态供 Agent 审计；search() 继续兼容旧的列表接口。"""
         query = str(request.get("query") if isinstance(request, dict) else getattr(request, "query", ""))
         limit = int((request.get("limit") if isinstance(request, dict) else getattr(request, "limit", 20)) or 20)
+        before = self.request_count
         payload = self._invoke(query, limit)
         if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
             raise ValueError("search-content 响应必须包含 items 列表")
         items = payload["items"]
+        for entry in items:
+            if isinstance(entry, dict):
+                key = item_to_evidence(entry)["dedupKey"] or item_to_evidence(entry)["evidenceId"]
+                if key:
+                    self.collected_items[key] = entry
         # 缺少可追溯标识的条目不进 Evidence（证据必须可回溯）。
         evidence = [
             item_to_evidence(entry)
@@ -124,21 +141,96 @@ class SearchContentCollectionTool:
             "partial": payload.get("partial", False),
             "sourceReports": payload.get("sourceReports", []),
             "droppedCount": len(items) - len(evidence),
+            "requestCount": self.request_count - before,
+            "collectionNotes": payload.get("collectionNotes", []),
         }
 
     def _invoke(self, query: str, limit: int) -> dict[str, Any]:
         if self._search_fn is not None:
+            self.request_count += 1
             return self._search_fn(query, limit)
+        if self.max_pages == 1:
+            return self._request(query, limit, self._platforms)
+        # 游标接口只接受单来源；分别翻页、全局去重、严格限定实际请求数。
+        items, reports, notes = {}, [], []
+        for platform in self._platforms or ["south_weekend", "toutiao"]:
+            cursor, cursors = None, set()
+            for page in range(1, self.max_pages + 1):
+                payload = self._request(query, limit, [platform], cursor=cursor, page=page)
+                reports.extend(payload.get("sourceReports", []))
+                notes.extend(payload.get("collectionNotes", []))
+                entries = payload.get("items", [])
+                added = 0
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    mapped = item_to_evidence(entry)
+                    key = mapped["dedupKey"] or mapped["evidenceId"]
+                    if key and key not in items:
+                        items[key] = entry
+                        added += 1
+                if payload.get("status") == "failed":
+                    break
+                next_cursor = payload.get("nextCursor")
+                if not next_cursor:
+                    notes.append(f"{platform}：第 {page} 页未提供下一页游标")
+                    break
+                if next_cursor in cursors or not added:
+                    notes.append(f"{platform}：翻页重复或无新增，已停止")
+                    break
+                if len(items) >= limit:
+                    notes.append(f"{platform}：达到本查询条数上限")
+                    break
+                cursors.add(next_cursor)
+                cursor = next_cursor
+            else:
+                notes.append(f"{platform}：达到每来源 {self.max_pages} 页上限")
+        failed = any(r.get("status") not in ("success", "empty") for r in reports)
+        return {"items": list(items.values())[:limit], "sourceReports": reports,
+                "status": "partial" if failed and items else "failed" if failed else "success",
+                "partial": failed, "collectionNotes": list(dict.fromkeys(notes))}
+
+    def _request(self, query: str, limit: int, platforms: list[str] | None,
+                 *, cursor: str | None = None, page: int = 1) -> dict[str, Any]:
+        requested = platforms or ["south_weekend", "toutiao"]
+        skipped = [{"platform": p, "status": self.blocked_sources[p], "count": 0, "retryable": False}
+                   for p in requested if p in self.blocked_sources]
+        platforms = [p for p in requested if p not in self.blocked_sources]
+        if not platforms:
+            return {"items": [], "status": "failed", "sourceReports": skipped,
+                    "collectionNotes": ["来源已触发访问限制，本次运行不再请求"]}
+        if self.request_count >= self.max_requests:
+            return {"items": [], "status": "failed", "sourceReports": [
+                {"platform": p, "status": "source_unavailable", "count": 0} for p in platforms or ["default"]
+            ], "collectionNotes": ["达到本次采集请求预算，未发送额外请求"]}
         body: dict[str, Any] = {"query": query, "limit": limit, "freshness": "prefer_fresh"}
-        if self._platforms:
-            body["platforms"] = self._platforms
-        response = httpx.post(
-            f"{self._base_url}/api/v1/tool/search-content",
-            json=body,
-            timeout=self._timeout,
-        )
-        response.raise_for_status()
-        return response.json()
+        if platforms:
+            body["platforms"] = platforms
+        if cursor:
+            body["cursor"] = cursor
+        self.request_count += 1
+        try:
+            response = httpx.post(f"{self._base_url}/api/v1/tool/search-content", json=body, timeout=self._timeout)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+                raise ValueError("搜索响应格式不正确")
+        except Exception as exc:
+            payload = {"items": [], "status": "failed", "sourceReports": [
+                {"platform": p, "status": "network_error", "count": 0} for p in platforms or ["default"]
+            ], "collectionNotes": [f"采集请求失败：{type(exc).__name__}"]}
+        if self.archive_path:
+            self.archive_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.archive_path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"query": query, "platforms": platforms, "page": page,
+                                        "response": payload}, ensure_ascii=False) + "\n")
+        for report in payload.get("sourceReports", []):
+            if report.get("status") in {"rate_limited", "authentication_required", "parser_changed", "source_unavailable"}:
+                self.blocked_sources[report["platform"]] = report["status"]
+        if skipped:
+            payload = dict(payload, sourceReports=[*payload.get("sourceReports", []), *skipped],
+                           partial=True, status="partial" if payload.get("items") else "failed")
+        return payload
 
 
 # ---- Agent 门面 ----

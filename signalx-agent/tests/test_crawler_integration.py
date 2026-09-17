@@ -39,6 +39,11 @@ class FixtureLLM:
 
     def generate_json(self, system_prompt, user_prompt):
         self.calls += 1
+        if '事件依据的独立反例审查员' in system_prompt:
+            return {'corrections': [], 'revisions': []}
+        if '事件证据与时间复核工具' in system_prompt:
+            from tests.test_event_tools import grounding_response
+            return grounding_response(user_prompt)
         marker = "上下文：\n" if system_prompt == QUERY_PLANNER_SYSTEM_PROMPT else "输入：\n"
         data = json.JSONDecoder().raw_decode(user_prompt.split(marker, 1)[1])[0]
         if system_prompt == QUERY_PLANNER_SYSTEM_PROMPT:
@@ -165,7 +170,7 @@ class CrawlerIntegrationTests(unittest.TestCase):
             "evidence": [item()], "resonance": {"platforms": ["cctv_news"]}})
         llm = FixtureLLM()
         runner = WorkflowDiscoveryRunner(self.workflow({"items": [item("c2")]}, llm), industry="智能手机")
-        result = runner.run(seed, {"maxRounds": 3, "maxToolCalls": 6, "maxLlmCalls": 4})
+        result = runner.run(seed, {"maxRounds": 3, "maxToolCalls": 6, "maxLlmCalls": 6})
         restored = WorkflowResult.model_validate(json.loads(json.dumps(result)))
         self.assertEqual(restored.stop_reason, StopReason.COMPLETED)
         self.assertEqual(restored.events[0].event_id, "alert-1")
@@ -174,7 +179,7 @@ class CrawlerIntegrationTests(unittest.TestCase):
         self.assertEqual({e.evidence_id for e in restored.events[0].evidence}, {"c1", "c2"})
         blocked = runner.run(seed, {"maxRounds": 3, "maxToolCalls": 6, "maxLlmCalls": 0})
         self.assertEqual(blocked["stopReason"], "MODEL_BUDGET_EXHAUSTED")
-        self.assertEqual(llm.calls, 4)
+        self.assertEqual(llm.calls, 6)
 
     def test_scheduled_tick_injects_runner_persists_result_and_is_idempotent(self):
         from crawler_tool.monitoring.scheduled_tick import run_scheduled_tick
@@ -196,7 +201,7 @@ class CrawlerIntegrationTests(unittest.TestCase):
             self.assertEqual(payload["executionStatus"], "completed")
             self.assertEqual(payload["result"]["events"][0]["eventId"], payload["alertId"])
             self.assertEqual(run_scheduled_tick(**options)["agentTrigger"]["dispatched"], 0)
-            self.assertEqual(llm.calls, 4)
+            self.assertEqual(llm.calls, 6)
 
     def test_monitor_cli_injects_configured_sources_and_reports_budget_stop(self):
         from agent.crawler_cli import main

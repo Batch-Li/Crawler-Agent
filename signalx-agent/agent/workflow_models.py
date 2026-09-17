@@ -37,6 +37,9 @@ class WorkflowRequest(SchemaModel):
     industry: str = Field(min_length=1)
     preset_keywords: list[str] = Field(default_factory=list)
     seed_event: Event | None = None
+    topic: str | None = Field(default=None, min_length=1)
+    topic_aliases: list[str] = Field(default_factory=list)
+    target_evidence_count: int = Field(default=0, ge=0, le=500)
     max_rounds: int = Field(default=3, ge=1, le=10)
     max_tool_calls: int = Field(default=6, ge=1, le=50)
     max_llm_calls: int = Field(default=24, ge=0, le=500)
@@ -47,6 +50,9 @@ class WorkflowRequest(SchemaModel):
     @model_validator(mode="after")
     def validate_mode_input(self) -> "WorkflowRequest":
         self.preset_keywords = _unique_non_empty(self.preset_keywords)
+        self.topic_aliases = _unique_non_empty(self.topic_aliases)
+        if self.topic and self.mode != WorkflowMode.BULK_DISCOVERY:
+            raise ValueError("topic 使用 BULK_DISCOVERY，不以单一告警限定主题范围")
         if self.mode == WorkflowMode.BULK_DISCOVERY and not self.preset_keywords:
             raise ValueError("BULK_DISCOVERY 必须提供 presetKeywords")
         if self.mode == WorkflowMode.EVENT_EXPANSION and self.seed_event is None:
@@ -101,6 +107,7 @@ class EventRelation(SchemaModel):
     evidence: list[EvidenceAnchor] = Field(min_length=1)
     confidence: Confidence
     status: Literal["supported", "needs_review"] = "supported"
+    temporal_basis: Literal['calendar', 'text', 'unknown', 'not_applicable'] = 'unknown'
 
 
 class TimelineEntry(SchemaModel):
@@ -109,6 +116,11 @@ class TimelineEntry(SchemaModel):
     event_time: datetime | None = None
     event_date: PartialDate | None = None
     time_status: Literal["known", "partial", "unknown"]
+
+
+class RejectedRelation(SchemaModel):
+    relation: EventRelation
+    reason: str
 
 
 class EventChain(SchemaModel):
@@ -129,10 +141,12 @@ class EventProcessingResult(SchemaModel):
     """字段提取、事件分类和事件链处理后的统一快照。"""
 
     events: list[Event] = Field(default_factory=list)
+    review_incomplete: bool = False
     classifications: list[EventClassification] = Field(default_factory=list)
     chains: list[EventChain] = Field(default_factory=list)
     unlinked_event_ids: list[str] = Field(default_factory=list)
     chain_unresolved_questions: list[str] = Field(default_factory=list)
+    rejected_relations: list[RejectedRelation] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_event_references(self) -> "EventProcessingResult":
@@ -199,6 +213,8 @@ class CollectionResult(SchemaModel):
     status: Literal["success", "partial", "failed"] = "success"
     source_reports: list[CollectionSourceReport] = Field(default_factory=list)
     dropped_count: int = Field(default=0, ge=0)
+    request_count: int = Field(default=1, ge=0)
+    collection_notes: list[str] = Field(default_factory=list)
 
 
 class ToolCallRecord(SchemaModel):
@@ -209,6 +225,8 @@ class ToolCallRecord(SchemaModel):
     status: Literal["success", "partial", "failed"] = "success"
     source_reports: list[CollectionSourceReport] = Field(default_factory=list)
     dropped_count: int = Field(default=0, ge=0)
+    request_count: int = Field(default=1, ge=0)
+    collection_notes: list[str] = Field(default_factory=list)
 
 
 class EvidenceReview(SchemaModel):
@@ -248,8 +266,16 @@ class WorkflowRound(SchemaModel):
 
 
 class WorkflowResult(SchemaModel):
+    review_incomplete: bool = False
     mode: WorkflowMode
     industry: str
+    collection_mode: Literal["live_search", "saved_evidence", "unspecified"] = "unspecified"
+    processing_mode: Literal['full', 'event_refinement'] = 'full'
+    input_result_sha256: str | None = None
+    response_replay_sha256: str | None = None
+    replayed_llm_calls: int = Field(default=0, ge=0)
+    topic: str | None = None
+    target_evidence_count: int = 0
     evidence: list[Evidence]
     events: list[Event]
     classifications: list[EventClassification]
@@ -268,6 +294,7 @@ class WorkflowResult(SchemaModel):
     stop_message: str = ""
     unlinked_event_ids: list[str] = Field(default_factory=list)
     chain_unresolved_questions: list[str] = Field(default_factory=list)
+    rejected_relations: list[RejectedRelation] = Field(default_factory=list)
 
 
 def _unique_non_empty(values: list[str]) -> list[str]:

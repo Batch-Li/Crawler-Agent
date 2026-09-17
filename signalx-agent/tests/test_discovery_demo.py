@@ -15,6 +15,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiscoveryDemoTests(unittest.TestCase):
+    def test_resume_accepts_only_known_missing_transport_tail(self):
+        from agent.discovery_demo import resume_llm, input_digest
+        from agent.workflow_models import WorkflowError
+        class Delegate:
+            model_name = 'fixture'
+            response_log = None
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'input.json'
+            source.write_text('[]')
+            saved = WorkflowResult(mode='BULK_DISCOVERY', industry='测试', stop_reason='FAILED', llm_calls=2,
+                evidence=[], events=[], classifications=[], chains=[], rounds=[],
+                input_result_sha256=input_digest(source), errors=[WorkflowError(stage='processing', error_type='APITimeoutError', message='超时')])
+            (root / 'result.json').write_text(saved.model_dump_json(by_alias=True))
+            (root / 'model_responses.jsonl').write_text(json.dumps({'content': '{}', 'finishReason': 'stop'}) + '\n')
+            self.assertEqual(len(resume_llm(Delegate(), root, source).records), 1)
+            saved.errors[0].error_type = 'ValueError'
+            (root / 'result.json').write_text(saved.model_dump_json(by_alias=True))
+            with self.assertRaises(ValueError):
+                resume_llm(Delegate(), root, source)
+
     def run_demo(self, target: Path, *extra: str):
         return subprocess.run([
             sys.executable, "-B", "-m", "agent.discovery_demo",
@@ -28,7 +49,7 @@ class DiscoveryDemoTests(unittest.TestCase):
             completed = self.run_demo(target)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             result = WorkflowResult.model_validate_json((target / "result.json").read_text())
-            self.assertEqual(result.llm_calls, 7)
+            self.assertEqual(result.llm_calls, 11)
             self.assertEqual(len(result.events), 2)
             self.assertEqual(len(result.chains), 1)
             self.assertTrue((target / "timeline.md").exists())
@@ -47,11 +68,11 @@ class DiscoveryDemoTests(unittest.TestCase):
     def test_budget_stop_still_saves_partial_result_and_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "partial"
-            completed = self.run_demo(target, "--max-llm-calls", "3")
+            completed = self.run_demo(target, "--max-llm-calls", "4")
             self.assertEqual(completed.returncode, 2, completed.stderr)
             result = WorkflowResult.model_validate_json((target / "result.json").read_text())
             self.assertEqual(len(result.events), 1)
-            self.assertEqual(result.llm_calls, 3)
+            self.assertEqual(result.llm_calls, 4)
             self.assertEqual(len(result.unprocessed_evidence_ids), 2)
             self.assertTrue((target / "round-002.json").exists())
 

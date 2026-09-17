@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -98,6 +99,34 @@ def parse_json_object(text: str) -> dict[str, Any]:
     return result
 
 
+def request_digest(system_prompt, user_prompt):
+    return hashlib.sha256(json.dumps([system_prompt, user_prompt], ensure_ascii=False).encode()).hexdigest()
+
+
+class ResponsePrefixLLM:
+    """重放同一输入失败运行的响应前缀，再继续真实调用；重放仍执行全部校验。"""
+    def __init__(self, delegate, records, source_sha256):
+        self.delegate, self.records = delegate, records
+        self.source_sha256 = source_sha256
+        self.model_name, self.replayed_calls = delegate.model_name, 0
+
+    def generate_json(self, system_prompt, user_prompt):
+        if self.replayed_calls >= len(self.records):
+            return self.delegate.generate_json(system_prompt, user_prompt)
+        record = self.records[self.replayed_calls]
+        digest = request_digest(system_prompt, user_prompt)
+        if record.get('requestSha256') and record['requestSha256'] != digest:
+            raise RuntimeError('已保存响应与当前请求不一致，停止恢复；请使用新目录重新运行')
+        self.replayed_calls += 1
+        if self.delegate.response_log:
+            with self.delegate.response_log.open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps({**record, 'requestSha256': digest,
+                    'replayedFromSha256': self.source_sha256}, ensure_ascii=False) + '\n')
+        if record.get('finishReason') == 'length':
+            raise ValueError('模型输出被截断，不能作为完整 JSON 使用')
+        return parse_json_object(record.get('content') or '')
+
+
 class DeepSeekLLM:
     """基于 OpenAI 兼容接口的 DeepSeek 客户端。"""
 
@@ -107,6 +136,7 @@ class DeepSeekLLM:
         base_url: str | None = None,
         model_name: str = "deepseek-chat",
         timeout: float = 60.0,
+        response_log: Path | None = None,
     ) -> None:
         # 固定读取项目配置，不修改进程环境，也不展开密钥中的 ${...}。
         config = dotenv_values(_ENV_FILE, encoding="utf-8-sig", interpolate=False)
@@ -117,6 +147,7 @@ class DeepSeekLLM:
         )
         self.model_name = model_name
         self.timeout = timeout
+        self.response_log = response_log
 
         if not self.api_key or not self.api_key.strip():
             raise ValueError("请在项目 .env 或环境变量中配置 DEEPSEEK_API_KEY")
@@ -142,8 +173,21 @@ class DeepSeekLLM:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0,
+            response_format={"type": "json_object"},
+            max_tokens=8192,
         )
         content = response.choices[0].message.content
+        if self.response_log:
+            self.response_log.parent.mkdir(parents=True, exist_ok=True)
+            with self.response_log.open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps({
+                    'model': response.model, 'finishReason': response.choices[0].finish_reason,
+                    'requestSha256': request_digest(system_prompt, user_prompt),
+                    'usage': response.usage.model_dump() if response.usage else None,
+                    'content': content,
+                }, ensure_ascii=False) + '\n')
+        if response.choices[0].finish_reason == 'length':
+            raise ValueError('模型输出被截断，不能作为完整 JSON 使用')
         if not content:
             raise ValueError("模型返回了空响应")
         return parse_json_object(content)

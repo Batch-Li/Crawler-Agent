@@ -9,7 +9,7 @@ from agent.query_planner import LLMQueryPlanner
 from agent.timeline import render_timeline
 from agent.workflow import EventDiscoveryWorkflow
 from agent.workflow_models import EventChain, EventProcessingResult, StopReason, WorkflowResult
-from tests.test_event_tools import QueueLLM, chain_response, evidence
+from tests.test_event_tools import QueueLLM, chain_response, evidence, catalog_events
 from tests.test_regressions import LocalLLM, planner, request
 from tests.test_workflow import FakeCollector
 
@@ -36,10 +36,10 @@ class ChainTests(unittest.TestCase):
         payload["chains"][0]["relations"][1]["relationType"] = "RESPONSE"
         data["events"].reverse()
         llm = QueueLLM([payload])
-        with model_call_budget(1) as budget:
+        with model_call_budget(2) as budget:
             result = EventChainTool(llm).invoke(data)
         chain = result.chains[0]
-        self.assertEqual(budget.calls, 1)
+        self.assertEqual(budget.calls, 2)
         self.assertEqual(chain.category, "STORYLINE")
         self.assertEqual(chain.event_ids, ["launch", "price", "response"])
         self.assertEqual([e.event_id for e in chain.timeline], chain.event_ids)
@@ -102,7 +102,7 @@ class ChainTests(unittest.TestCase):
             with self.subTest(name=name):
                 llm = QueueLLM([invalid, valid])
                 self.assertEqual(len(EventChainTool(llm).invoke(data).chains), 1)
-                self.assertEqual(llm.calls, 2)
+                self.assertEqual(llm.calls, 3)
                 with self.assertRaises(EventChainToolError):
                     EventChainTool(QueueLLM([invalid]), max_attempts=1).invoke(data)
 
@@ -116,18 +116,18 @@ class ChainTests(unittest.TestCase):
         with self.assertRaises(EventChainToolError):
             EventChainTool(QueueLLM([payload]), max_attempts=1).invoke(data)
 
-    def test_unknown_time_is_not_filled_from_publication_and_marks_review(self):
+    def test_unknown_time_does_not_override_reviewed_relative_order(self):
         data = chain_input()
         data["events"][0].event_time = None
         payload = chain_response(data["events"], "FOLLOW_UP")
         before = deepcopy(payload)
         result = EventChainTool(QueueLLM([payload])).invoke(data)
         chain = result.chains[0]
-        self.assertEqual(chain.event_ids, ["price", "response", "launch"])
-        self.assertIsNone(chain.timeline[-1].event_time)
-        self.assertEqual(chain.timeline[-1].time_status, "unknown")
-        self.assertEqual(chain.relations[0].status, "needs_review")
-        self.assertTrue(chain.unresolved_questions)
+        self.assertEqual(chain.event_ids, ["launch", "price", "response"])
+        self.assertIsNone(chain.timeline[0].event_time)
+        self.assertEqual(chain.timeline[0].time_status, "unknown")
+        self.assertEqual(chain.relations[0].status, "supported")
+        self.assertEqual(chain.relations[0].temporal_basis, 'text')
         self.assertEqual(payload, before)
 
     def test_chain_id_survives_rename_and_model_matched_extension(self):
@@ -157,9 +157,9 @@ class ChainTests(unittest.TestCase):
         result = EventDiscoveryWorkflow(
             FakeCollector({"查询一": [evidence("one", "发布产品")], "查询二": [evidence("two", "产品调价")]}),
             SignalXEventProcessor.from_llm(llm), planner("查询一", "查询二"),
-        ).run(request(maxLlmCalls=5))
+        ).run(request(maxLlmCalls=9))
         self.assertEqual(result.stop_reason, StopReason.MODEL_BUDGET_EXHAUSTED)
-        self.assertEqual(result.llm_calls, 5)
+        self.assertEqual(result.llm_calls, 9)
         self.assertEqual(len(result.events), 1)
         self.assertEqual(result.chains, [])
         self.assertEqual(result.unprocessed_evidence_ids, ["two"])
@@ -178,7 +178,7 @@ class ChainTests(unittest.TestCase):
                 if "事件关联工具" in system:
                     self.calls.append((system, user))
                     context = json.loads(user.split("输入：\n", 1)[1])
-                    payload = chain_response([Event.model_validate(e) for e in context["events"]], "FOLLOW_UP")
+                    payload = chain_response(catalog_events(context), "FOLLOW_UP")
                     payload["unresolvedQuestions"] = ["需要独立来源"]
                     return payload
                 return super().generate_json(system, user)
@@ -189,9 +189,9 @@ class ChainTests(unittest.TestCase):
             SignalXEventProcessor.from_llm(llm), LLMQueryPlanner(llm),
         ).run(request())
         self.assertEqual(result.stop_reason, StopReason.COMPLETED)
-        self.assertEqual(result.llm_calls, 5)
+        self.assertEqual(result.llm_calls, 8)
         self.assertIn("需要独立来源", result.unresolved_questions)
-        self.assertTrue(any("先后时间待核实" in q for q in result.unresolved_questions))
+        self.assertFalse(any("先后时间待核实" in q for q in result.unresolved_questions))
         prompt = next(user for system, user in llm.calls if "查询规划器" in system)
         self.assertIn('"chainUnresolvedQuestions": ["需要独立来源"]', prompt)
         self.assertIn('"timeStatus": "unknown"', prompt)
@@ -202,7 +202,7 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(old.relations, [])
         self.assertEqual(old.timeline, [])
 
-    def test_timeline_includes_workflow_stop_and_global_questions_without_events(self):
+    def test_timeline_moves_stop_to_footer_and_keeps_questions_in_json(self):
         result = WorkflowResult(
             mode='BULK_DISCOVERY', industry='测试', evidence=[], events=[],
             classifications=[], chains=[], rounds=[], stop_reason=StopReason.NO_EVIDENCE,
@@ -211,25 +211,29 @@ class ChainTests(unittest.TestCase):
             chain_unresolved_questions=['需要后续进展'],
         )
         text = render_timeline(result)
-        self.assertIn('停止说明：来源没有返回可用材料', text)
-        self.assertIn('## 整体待核实', text)
-        self.assertEqual(text.count('缺少独立来源'), 1)
-        self.assertIn('需要后续进展', text)
+        body, footer = text.split('## 备注', 1)
+        self.assertNotIn('停止说明', body)
+        self.assertIn('停止说明：来源没有返回可用材料', footer)
+        self.assertNotIn('缺少独立来源', text)
+        self.assertNotIn('需要后续进展', text)
+        self.assertIn('缺少独立来源', result.unresolved_questions)
+        self.assertIn('需要后续进展', result.chain_unresolved_questions)
 
-    def test_snapshot_timeline_exposes_unlinked_questions_with_readable_event_names(self):
+    def test_snapshot_timeline_keeps_unlinked_questions_out_of_body(self):
         event = Event(event_id='evt_current', title='产品发布',
                       evidence=[evidence('source', '产品发布')], merged_event_ids=['evt_old'])
         result = EventProcessingResult(events=[event], chain_unresolved_questions=[
             'evt_old 的具体日期待核实', 'evt_current 的具体日期待核实'])
         before = result.model_dump_json()
         text = render_timeline(result)
-        self.assertIn('「产品发布」 的具体日期待核实', text)
+        self.assertIn('产品发布', text)
         self.assertNotIn('evt_old', text)
         self.assertNotIn('evt_current', text)
-        self.assertEqual(text.count('具体日期待核实'), 1)
+        self.assertNotIn('具体日期待核实', text)
+        self.assertIn('缺失信息、口径分歧', text.split('## 备注', 1)[1])
         self.assertEqual(result.model_dump_json(), before)
 
-    def test_timeline_does_not_repeat_questions_already_shown_in_a_chain(self):
+    def test_timeline_does_not_list_questions_from_chains(self):
         events = chain_input()['events'][:2]
         chain = EventChain(chain_id='chain', title='产品进展', category='STORYLINE',
                            event_ids=[e.event_id for e in events],
@@ -237,8 +241,9 @@ class ChainTests(unittest.TestCase):
         result = EventProcessingResult(events=events, chains=[chain],
                                        chain_unresolved_questions=['需核实关联方向'])
         text = render_timeline(result)
-        self.assertEqual(text.count('需核实关联方向'), 1)
-        self.assertNotIn('## 整体待核实', text)
+        self.assertNotIn('需核实关联方向', text)
+        self.assertEqual(text.count('## 备注'), 1)
+        self.assertEqual(result.chain_unresolved_questions, ['需核实关联方向'])
 
 
 if __name__ == "__main__":

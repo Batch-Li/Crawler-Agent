@@ -86,13 +86,16 @@ class EventDiscoveryWorkflow:
                     if isinstance(exc, ModelBudgetExceeded) else StopReason.FAILED)
 
         def finish(reason: StopReason) -> WorkflowResult:
-            degraded = any(call.status != "success" for row in rounds for call in row.tool_calls)
+            degraded = snapshot.review_incomplete or any(call.status != "success" for row in rounds for call in row.tool_calls)
             if degraded and reason in (StopReason.COMPLETED, StopReason.NO_EVIDENCE, StopReason.NO_NEW_QUERIES, StopReason.NO_PROGRESS):
                 reason = StopReason.PARTIAL if snapshot.classifications else StopReason.FAILED
             return WorkflowResult(
                 mode=request.mode, industry=request.industry,
+                topic=request.topic, target_evidence_count=request.target_evidence_count,
+                collection_mode=getattr(self.collector, "collection_mode", "unspecified"),
                 evidence=list(evidence_by_id.values()),
                 events=snapshot.events, classifications=snapshot.classifications,
+                review_incomplete=snapshot.review_incomplete,
                 chains=snapshot.chains, rounds=rounds, stop_reason=reason,
                 collection_calls=len(seen), llm_calls=budget.calls,
                 pending_queries=list(pending.values()),
@@ -112,12 +115,17 @@ class EventDiscoveryWorkflow:
                 ])),
                 unlinked_event_ids=snapshot.unlinked_event_ids,
                 chain_unresolved_questions=snapshot.chain_unresolved_questions,
+                rejected_relations=snapshot.rejected_relations,
                 stop_message={
                     StopReason.NO_PROGRESS: "连续查询没有新增或更新的有效证据，停止扩搜；待核实问题仍未解决。",
                     StopReason.COMPLETED: "已按当前查询计划处理完毕；事件链为空不影响正常结束。",
                     StopReason.MAX_ROUNDS: "达到轮数上限，保留结果和待执行查询。",
                     StopReason.TOOL_BUDGET_EXHAUSTED: "达到搜索调用上限，未发送额外请求。",
                     StopReason.MODEL_BUDGET_EXHAUSTED: "达到模型调用上限，未发送额外请求。",
+                    StopReason.FAILED: "本轮处理失败，已保留采集材料和上一次成功的事件快照。",
+                    StopReason.PARTIAL: "部分来源或候选复核未完成，已保留可用材料与通过校验的关联。",
+                    StopReason.NO_EVIDENCE: "当前查询未获得可用的相关材料。",
+                    StopReason.NO_NEW_QUERIES: "没有新的有效查询，已保留现有材料。",
                 }.get(reason, reason.value),
             )
 
@@ -167,6 +175,8 @@ class EventDiscoveryWorkflow:
                         query=query, success=collected.status != "failed", result_count=len(items),
                         status=collected.status, source_reports=collected.source_reports,
                         dropped_count=collected.dropped_count,
+                        request_count=collected.request_count,
+                        collection_notes=collected.collection_notes,
                     ))
                 except Exception as exc:
                     calls.append(ToolCallRecord(
@@ -178,7 +188,7 @@ class EventDiscoveryWorkflow:
             incoming = {item.evidence_id: item for item in collected_items}
             reviews: list[EvidenceReview] = []
             reason = None
-            if self.relevance_filter is not None and request.mode == WorkflowMode.EVENT_EXPANSION:
+            if self.relevance_filter is not None and (request.mode == WorkflowMode.EVENT_EXPANSION or request.topic):
                 to_review = [item for key, item in incoming.items()
                              if evidence_by_id.get(key) != item
                              and (key not in review_cache or review_cache[key][0] != item)]
@@ -238,6 +248,8 @@ class EventDiscoveryWorkflow:
             ))
             if reason is not None:
                 return finish(reason)
+            if getattr(self.collector, 'complete_after_presets', False) and not pending:
+                return finish(StopReason.COMPLETED)
             progress = any(before.get(key) != item for key, item in evidence_by_id.items())
             no_progress_rounds = 0 if progress else no_progress_rounds + bool(calls)
             mandatory_pending = request.mode == WorkflowMode.BULK_DISCOVERY and any(

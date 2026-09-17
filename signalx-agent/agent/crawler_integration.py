@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 class CrawlerCollectionTool:
     name = "signalx_crawler_collection"
+    collection_mode = "live_search"
 
     def __init__(self, tool: SearchContentCollectionTool):
         self.tool = tool
@@ -47,6 +48,8 @@ class CrawlerCollectionTool:
         return CollectionResult(
             evidence=evidence[:request.limit], status=status,
             source_reports=reports, dropped_count=dropped,
+            request_count=payload.get("requestCount", 1),
+            collection_notes=payload.get("collectionNotes", []),
         )
 
 
@@ -96,12 +99,15 @@ def load_entity_aliases(entities_file: str | Path | None = None) -> dict[str, st
 
 def build_crawler_workflow(llm: StructuredLLM, *, base_url: str = "http://127.0.0.1:8301",
                            platforms: list[str] | None = None,
-                           entities_file: str | Path | None = None) -> EventDiscoveryWorkflow:
+                           entities_file: str | Path | None = None,
+                           max_pages: int = 1, max_requests: int = 60,
+                           archive_path: str | Path | None = None) -> EventDiscoveryWorkflow:
     from crawler_tool.monitoring import SearchContentCollectionTool
 
     return EventDiscoveryWorkflow(
         collector=CrawlerCollectionTool(SearchContentCollectionTool(
             base_url=base_url, platforms=platforms,
+            max_pages=max_pages, max_requests=max_requests, archive_path=archive_path,
         )),
         processor=SignalXEventProcessor.from_llm(llm, entity_aliases=load_entity_aliases(entities_file)),
         planner=LLMQueryPlanner(llm, max_queries_per_round=2),

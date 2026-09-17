@@ -177,7 +177,7 @@ class LiveRegressionTests(unittest.TestCase):
                    return_value={"items": [item("new")]}):
             result = build_crawler_workflow(model).run({"mode": "EVENT_EXPANSION", "industry": "手机", "seedEvent": seed})
         self.assertEqual(result.stop_reason, StopReason.COMPLETED)
-        self.assertEqual(result.llm_calls, 5)
+        self.assertEqual(result.llm_calls, 7)
         self.assertEqual(result.rounds[0].evidence_reviews[0].decision, "relevant")
 
 

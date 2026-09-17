@@ -96,7 +96,7 @@ python -m agent.crawler_cli discover --live --industry "目标行业" --keyword 
 |---|---:|---|
 | `--max-rounds` | 3 | 最多处理轮数 |
 | `--max-tool-calls` | 6 | 最多采集调用次数，含失败；一次调用可访问多个来源 |
-| `--max-llm-calls` | 24 | 最多模型调用次数，含规划、审查、抽取、合并、分类、串联及重试 |
+| `--max-llm-calls` | 24 | 最多模型调用次数，含规划、审查、抽取、合并、分类、串联、关系语义复核及重试 |
 | `--limit` | 20 | 每次查询最多接收的证据数，不是整个调研总数 |
 | `--max-no-progress-rounds` | 1 | 连续无有效增量达到该值时停止 |
 
@@ -133,7 +133,16 @@ python -m agent.crawler_cli discover --live --industry "目标行业" --seed inp
 
 ## 4. 分析已有爬虫数据
 
-将数据归一化为 Evidence 数组，保存为 `inputs/my-topic/evidence.json`。格式就是第 3 节的 `evidence` 数组，单独保存该数组即可；原始网页、爬虫响应或 JSONL 不能直接传入。
+将数据归一化为 Evidence 数组，保存为 `inputs/my-topic/evidence.json`。格式就是第 3 节的 `evidence` 数组。也可直接传入采集目录，程序递归读取其中的 `search_responses.jsonl`，去重并归一化，支持读取已中断的采集。
+
+大量调研先采集后分析，避免模型失败中断后续检索。按研发、发布、销售、供应链、适配和回应等方向重复添加 `--keyword`：
+
+```bash
+python -m agent.crawler_cli collect --live --industry "目标行业" --keyword "目标产品 发布" --keyword "目标产品 供应链" --keyword "目标产品 应用适配" --platform toutiao --max-pages 5 --max-source-requests 200 --limit 100 --output-dir runs/my-topic-crawler
+python -m agent.discovery_demo runs/my-topic-crawler --live --industry "目标行业" --topic "目标产品" --batches-per-round 10 --max-llm-calls 180 --output-dir runs/my-topic-agent
+```
+
+采集目录保存原始响应、逐查询结果、`evidence.json` 和采集统计；分析目录保存 `result.json`、`timeline.md`、`report.md` 和模型原始回复。每批读取最多 100 条，抽取每次最多 20 条，相关性和证据复核分别拆批。来源触发验证、限流或解析失效后，本次运行停用该来源，其余来源继续。搜狗微信公开索引需服务端显式启用 `SOGOU_WECHAT_MODE=anonymous_best_effort` 并添加 `--platform sogou_wechat`，仅返回摘要。
 
 每条至少有 `evidenceId`、`source`，以及 `title`／`content`／`snippet` 中的一项。有全文放 `content` 并标记 `hasFullContent: true`；只有摘要放 `snippet`，`content` 留空并标记 `hasFullContent: false`。ID 应唯一且稳定，保留真实来源与链接。完整字段见 [Evidence 模型](agent/models.py)。
 
@@ -141,9 +150,21 @@ python -m agent.crawler_cli discover --live --industry "目标行业" --seed inp
 python -m agent.discovery_demo inputs/my-topic/evidence.json --live --industry "目标行业" --max-rounds 10 --max-tool-calls 10 --max-llm-calls 24 --output-dir runs/my-topic-local-001
 ```
 
-只读文件、不补爬网页，但会调用真实 DeepSeek。数组每 100 条划成一批，默认最多 10 轮／10 次文件批次读取；模型新提出、文件中没有的查询返回空。除最终结果和时间链，还保存 `round-001.json` 等各轮快照。
+已有完整结果仅需复核节点、时间与关系时，使用 `python -m agent.discovery_demo runs/my-topic-local-001/result.json --live --refine-events --max-llm-calls 24 --output-dir runs/my-topic-refined-001`。此模式不重新抽取全部材料，输出标记 `processingMode=event_refinement`，并保留输入文件的 SHA-256 指纹。逐条证据复核分批调用模型，材料越多调用越多。
+
+仅做增量归并与重串联时可加 `--reuse-grounding`：未改变节点复用已完成的证据审查，合并或拆分后的节点重新审查。大规模去重先提名候选，再逐组核对完整证据。
+
+大规模串联按故事线拆批。个别去重或关系候选校验失败时保留独立节点、继续其他组，结果标记 `PARTIAL`／`reviewIncomplete`；展示的关系仍须通过引用与语义校验。
+
+分析或复核因额度中断时，同一输入、同版本代码可加 `--resume-from 上次失败目录`，换新输出目录并增加总预算。已保存响应先重放并重新校验，只请求剩余步骤；预算包含重放，`replayedLlmCalls` 单独记录。新日志还核对请求指纹，输入或请求不一致会停止恢复。
+
+只读文件、不补爬网页，但会调用真实 DeepSeek。数组每 100 条划成一批，默认最多 10 轮／10 次文件批次读取。除最终结果和时间链，还保存 `round-001.json` 等各轮快照。
+
+也可直接传入已有 `result.json`（包括监测包装结果），重新处理其中保留的证据；仍需指定新输出目录。文件批次处理完即结束，不进行无效补搜。真实模型模式额外保存 `model_responses.jsonl`，记录模型原始回复、结束原因和用量，不保存密钥。`report.md` 会标注这是已采集材料重处理，不能当作新的网页采集。
 
 ## 5. 单次监测并触发分析
+
+监测一个完整产品／主题时使用 `--topic`；不加该参数则沿用单条告警扩展流程，两者覆盖范围不同。
 
 沿用第 2 节的 `configs/my-topic/entities.json`，再准备两个文件：
 
@@ -160,6 +181,22 @@ python -m agent.discovery_demo inputs/my-topic/evidence.json --live --industry "
 ```
 
 主体 `type` 可取 `self`、`competitor`、`regulator`、`industry_actor`，分别为我方、竞品、监管方和其他行业主体，须与规则的 `appliesTo` 匹配。配置不要沿用旧手机主题的名称、行业词及对象词。
+
+### 主题监测（推荐）
+
+在 `queries.json` 中覆盖主题名称、发布、价格、功能、供货、应用适配等不同维度，再运行：
+
+```bash
+python -m agent.crawler_cli monitor --live --industry "目标行业" --topic "目标产品" --config-dir configs/my-topic --data-dir runs/my-topic/monitoring --crawl-dir runs/my-topic/crawl --limit 60 --max-pages 3 --max-source-requests 60 --max-tool-calls 12 --max-rounds 4 --max-llm-calls 24 --target-evidence 30
+```
+
+主题模式执行查询清单，在整轮模型预算内统一分析相关新闻，不受单条告警的动作词和每日派发数限制；规则告警另行保存。可用 `--topic-alias` 补充产品别名。`--target-evidence` 是相关材料目标，不是保证抓到的数量；不足会明确报告，不用无关内容凑数。
+
+分页按来源分别请求，需要采集服务配置 `CRAWLER_CURSOR_SECRET`（见采集项目 README）。仅在接口返回下一页游标时翻页；重复页、验证／网络失败和预算上限都会停止，并写入报告。当前没有正文补采接口，搜索摘要不会标成全文。
+
+主题结果保存在 `--data-dir/topics/<本次时间>/`：`report.md`（先看）、`timeline.md`、`result.json`、`search_responses.jsonl`。终端返回具体目录。原始响应覆盖初始与补充检索的各页，过滤记录和轮次快照保留在 JSON 中。
+
+### 单告警扩展
 
 在复制的 `base_rules.json` 中设置 `settings`：`agentAutoTrigger` 控制派发，`agentTriggerScore` 是分数门槛，`agentMaxRunsPerDay` 是每日派发上限，`agentMaxRounds`／`agentMaxToolCalls` 是每条告警的扩展预算。未写出的字段使用程序默认值；当前生效值分别为开启、1.5、10、3、6，按本主题需求调整。
 
@@ -179,8 +216,10 @@ python -m agent.crawler_cli monitor --live --industry "目标行业" --config-di
 
 | 文件 | 用途 |
 |---|---|
+| `runs/my-topic-001/report.md` | 真实采集入口自动生成的新闻清单、事件概览和采集边界 |
 | `runs/my-topic-001/timeline.md` | 优先阅读：事件日期、关系、依据、来源及待核实项；用 Markdown 编辑器／预览打开 |
 | `runs/my-topic-001/result.json` | 程序对接和溯源：事件、分类、链、证据、轮次记录、停止原因；用编辑器打开 |
+| `runs/my-topic-001/search_responses.jsonl` | 真实采集入口的逐页搜索原始响应；文件回放入口不生成 |
 
 ### 监测联动
 
@@ -200,8 +239,8 @@ python -m agent.crawler_cli monitor --live --industry "目标行业" --config-di
 ### 读取与溯源
 
 1. 先看 `result.json` 的 `stopReason`／`stopMessage`，确认完成程度；监测结果先进入内层 `result`。
-2. 看 `timeline.md` 中的停止说明、事件链和整体待核实项，按原文链接核实关键日期和关系。未关联事件也保留，日期未知不代表发生得更晚。
-3. 查 JSON：`events[].evidence` 是事件证据；`chains[].relations` 是关系类型、理由、原文引用及复核状态；`rounds` 是各轮采集与处理记录。
+2. 看 `timeline.md`：按故事线展示关键节点及关系，箭头表示证据支持的动作顺序；计划、传闻等标明类型。未串联节点与全部新闻在 `report.md`。缺失说明集中在文末，报道日期不替代事件日期。
+3. 查 JSON：`events[].evidenceAssessments` 区分支持、反驳、背景及混合材料，原文全部保留；`timeCandidates` 保存发生／目标／报道时间引用，`dateStatus` 标注日期冲突；`chains[].relations` 保存关系和相对顺序依据，`needs_review` 表示仍有疑问；`rejectedRelations` 保存排除原因；`rounds` 保存处理记录。
 4. 未完成项看 `unresolvedQuestions`、`pendingQueries`、`unprocessedEvidenceIds`、`errors`。种子过滤记录在 `filteredEvidence`，审查失败输入在 `unreviewedEvidence`。
 
 常规 CLI 不自动生成包含所有爬虫原始报文、模型提示词和响应的 `raw_output.json`；历史测试同名文件由专用审计过程额外保存。日常结果 JSON 保存标准化证据和处理记录，不是完整原始调用日志。
@@ -226,7 +265,9 @@ python -m agent.timeline runs/my-topic-001/result.json --output runs/my-topic-00
 | 启动失败／没有结果文件 | 检查当前目录、虚拟环境、输入 JSON、密钥、服务地址；启动前报错可能尚未落盘 |
 
 - `discover` 和证据文件入口仅 `COMPLETED` 返回退出码 0，其他状态返回 2；非零不等于没有可用文件。`monitor` 返回 0 也可能只是未触发，`dispatched` 仅表示派发，完成情况看结果文件。
-- 日期保留原文精度：`eventDate` 为年／月／日，`eventTime` 为带时区精确时刻并转 UTC。不补月初或零点；先后不等于因果，`needs_review` 关系需人工复核。
+- 日期保留年／月／日精度；缺年份用 `--09-16` 或 `--09`。只有同一事件的明确日期、同条来源的年份上下文，或可靠发布时间支撑的相对时间可补全。冲突保留共同精度；`targetDate`、`reportDate` 分别存目标和报道日期。计划节点按目标日期展示，预测年份不充当事件日期。
+- 日历时间不足时，原文明确的“回应、辟谣、发布后”等仍可支持相对顺序。关系通过语义复核且置信度至少 0.85 才进入正文；反驳、混合和背景材料不计作支持来源。反例审查检查概念混淆、错借日期及混合节点。在线规划优先补查关键日期；只读证据文件时不会补爬。
+- `actionKind` 区分发布、预购、发售等动作，`claimType` 区分报道进展、已宣布计划、预测、传闻、观点与辟谣。事件复核可拆分错误混合节点，全部证据保留；候选关系另做一次语义复核，重试计入总预算。旧结果只重导 Markdown 不会获得新分析，需重新调用模型。
 - 摘要不等于全文，检查 `hasFullContent`、`sourceName`、`qualityWarnings`。模型置信度和引用校验不代替事实核查，来源覆盖与全文获取由爬虫能力决定。
 - 工作流返回后才落盘，强行终止可能丢失本次进度；不支持自动断点恢复，失败派发不自动重试。
 - 分享可读结果用 `timeline.md`，程序对接同时给 `result.json`。分享项目前排除 `.env`、`.venv/` 和缓存，检查结果内的私有数据，不上传密钥。
@@ -246,3 +287,5 @@ python -m unittest discover -s tests -q
 只需单事件竞品分析时可用 `python -m agent.demo inputs/my-topic/seed.json --output runs/competitor-001.json`。它直接调用真实模型，没有 `--live` 开关、不共享发现预算，也不生成时间链；父目录须已存在，输出文件会覆盖同名文件。不指定 `--output` 时完整 JSON 打印到终端。
 
 代码与接口见 [工作流](docs/WORKFLOW.md)，历史验收见 [使用报告](docs/使用报告.md)。仓库保留测试代码和固定样例，运行产物不纳入版本控制；各次结果从指定输出目录获取。
+
+`runs/` 只放程序自动生成的输出，禁止人工修改。配置放 `configs/`，人工分析和验收记录放其他目录；修复后使用新运行目录验证，不覆盖旧结果。

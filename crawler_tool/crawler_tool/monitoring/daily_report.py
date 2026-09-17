@@ -9,8 +9,19 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+import re
 
 from crawler_tool.monitoring.store import MonitorStore
+
+_STATUS = {"pending": "待处理", "dispatched": "已启动分析", "confirmed": "已确认", "dismissed": "已排除"}
+_PRIORITY = {"yellow": "黄色线索", "orange": "橙色线索", "red": "红色线索"}
+_SOURCE = {"toutiao": "今日头条搜索", "south_weekend": "南方周末", "cctv_news": "央视新闻"}
+_REASON = {"triage_unavailable_or_non_event": "未启用研判或未识别为事件",
+           "industry_watch": "行业观察", "below_threshold": "未达告警阈值"}
+
+
+def _text(value: Any) -> str:
+    return re.sub(r'[\x00-\x1f\u200b-\u200f\u202a-\u202e\ufeff]', ' ', str(value or '')).replace('<', '&lt;').replace('>', '&gt;')
 
 
 def generate_daily_report(
@@ -30,8 +41,8 @@ def generate_daily_report(
         "",
         f"- 告警：{len(alerts)} 条（待判读 {len(pending)}）",
         f"- 观察箱新增：{len(observation)} 条",
-        f"- 累计 tick：{state.get('tickCount', 0)}",
-        f"- agent 触发：{(state.get('agentRuns') or {}).get(prefix, 0)} 次",
+        f"- 累计监测轮次：{state.get('tickCount', 0)}",
+        f"- 告警扩展触发：{(state.get('agentRuns') or {}).get(prefix, 0)} 次（不含主题统一分析）",
         "",
         "## 告警",
         "",
@@ -41,11 +52,11 @@ def generate_daily_report(
     for alert in sorted(alerts, key=lambda a: float(a.get("score") or 0), reverse=True):
         evidence = (alert.get("evidence") or [{}])[0]
         lines.append(
-            f"- **[{alert.get('status')}|{alert.get('priority')}] {alert.get('matchedRule')}"
-            f" score={alert.get('score')}** 主体={alert.get('subjectName') or '-'}"
-            f" 平台={'+'.join((alert.get('resonance') or {}).get('platforms', []))}"
+            f"- **{_STATUS.get(alert.get('status'), '已记录')} · {_PRIORITY.get(alert.get('priority'), '观察线索')}"
+            f" · 规则分 {alert.get('score')}** 主体：{_text(alert.get('subjectName') or '-')}"
+            f"；来源：{'、'.join(_SOURCE.get(p, p) for p in (alert.get('resonance') or {}).get('platforms', []))}"
         )
-        lines.append(f"  - {evidence.get('title', '')}")
+        lines.append(f"  - {_text(evidence.get('title', ''))}")
         lines.append(f"  - 理由：{alert.get('why', '')}")
         if alert.get("statusNote"):
             lines.append(f"  - 标注：{alert['statusNote']}")
@@ -53,7 +64,7 @@ def generate_daily_report(
     if not observation:
         lines.append("（今日无新增）")
     for entry in observation[-30:]:
-        lines.append(f"- [{entry.get('reason', '')}] {entry.get('title', '')}（{entry.get('platform')}）")
+        lines.append(f"- {_text(entry.get('title', ''))}（{_SOURCE.get(entry.get('platform'), entry.get('platform'))}；{_REASON.get(entry.get('reason'), '留作观察')}）")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
