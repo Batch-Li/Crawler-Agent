@@ -1,0 +1,40 @@
+{
+  "profile": {
+    "enterpriseId": "apple-mobile",
+    "enterpriseName": "苹果公司",
+    "industry": "智能手机与消费电子",
+    "businessKeywords": ["手机", "智能手机", "iPhone", "折叠屏", "新机", "鸿蒙", "智能终端"],
+    "excludeWords": ["抽奖", "优惠券", "带货", "红包", "免息", "手机 -词语解析"],
+    "requirePublishedAt": true,
+    "maxLlmCalls": 32
+  },
+  "monitor": {
+    "entities": [
+      {"entityId": "apple", "canonicalName": "苹果公司", "type": "self", "aliases": ["苹果", "Apple"], "products": [{"name": "iPhone", "aliases": []}], "confusableBlocklist": ["苹果树", "苹果汁", "苹果种植", "苹果产业"]},
+      {"entityId": "huawei", "canonicalName": "华为", "type": "competitor", "aliases": ["Huawei"], "products": [{"name": "华为 Mate", "aliases": []}]},
+      {"entityId": "xiaomi", "canonicalName": "小米集团", "type": "competitor", "aliases": ["小米", "Xiaomi"], "products": []},
+      {"entityId": "samsung", "canonicalName": "三星", "type": "competitor", "aliases": ["Samsung"], "products": []},
+      {"entityId": "oppo", "canonicalName": "OPPO", "type": "competitor", "aliases": ["一加"], "products": []},
+      {"entityId": "vivo", "canonicalName": "vivo", "type": "competitor", "aliases": ["iQOO"], "products": []},
+      {"entityId": "honor", "canonicalName": "荣耀", "type": "competitor", "aliases": ["Honor"], "products": []}
+    ],
+    "settings": {
+      "lookbackHours": 720,
+      "tauHours": 720,
+      "cooldownHours": 24,
+      "eventGroupHardWindowHours": 2,
+      "objectWindowChars": 32,
+      "grayMode": false,
+      "agentAutoTrigger": true,
+      "agentTriggerScore": 1.5,
+      "agentMaxRunsPerDay": 6,
+      "agentMaxRounds": 3,
+      "agentMaxToolCalls": 6
+    },
+    "families": [
+      {"id": "competitor_launch", "name": "手机新品发布", "appliesTo": ["self", "competitor", "industry_actor"], "actions": ["发布", "推出", "开售", "发售", "预售", "官宣", "上市", "首发", "开启预约", "开放预约"], "objectWords": ["手机", "新品", "新机", "iPhone", "Mate", "折叠屏", "Galaxy", "Find", "系列", "产品"], "noticeWords": ["评测", "体验", "盘点"], "excludeWords": ["抽奖", "优惠券"], "weight": 2, "eventTypes": ["PRODUCT_LAUNCH"]},
+      {"id": "product_change", "name": "手机价格、供货与功能变化", "appliesTo": ["self", "competitor", "industry_actor"], "actions": ["涨价", "降价", "调整", "加单", "砍单", "减产", "量产", "延期", "更新", "升级", "下调", "上调", "上线", "推送"], "objectWords": ["手机", "新机", "iPhone", "售价", "价格", "订单", "产量", "系统", "芯片", "供货", "系列", "版本", "功能"], "weight": 2, "eventTypes": ["PRODUCT_CHANGE"]},
+      {"id": "public_opinion", "name": "手机争议与回应", "appliesTo": ["self", "competitor", "industry_actor"], "actions": ["回应", "辟谣", "召回", "起诉", "投诉", "否认", "澄清"], "objectWords": ["手机", "iPhone", "问题", "故障", "用户", "电池", "屏幕", "质疑", "传闻", "消息"], "weight": 2, "eventTypes": ["PUBLIC_OPINION"]}
+    ]
+  }
+}

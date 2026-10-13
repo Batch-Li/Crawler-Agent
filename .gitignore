@@ -1,12 +1,13 @@
 # macOS
 .DS_Store
 
-# 本仓库只跟踪两个项目、根说明及仓库配置
+# 只跟踪项目源码、说明及仓库配置
 /*
 !/.gitignore
 !/README.md
 !/crawler_tool/
 !/signalx-agent/
+!/news-signal-trigger/
 
 # Python
 __pycache__/
@@ -32,5 +33,6 @@ htmlcov/
 # 运行产物
 runs/
 /crawler_tool/data/
+/news-signal-trigger/data/
 *.log
 analysis.json

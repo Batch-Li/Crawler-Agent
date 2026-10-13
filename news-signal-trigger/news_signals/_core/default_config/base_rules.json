@@ -1,0 +1,455 @@
+{
+  "settings": {
+    "lookbackHours": 6,
+    "tauHours": 6,
+    "cooldownHours": 24,
+    "eventGroupHardWindowHours": 2,
+    "resonanceWindowHours": 12,
+    "resonanceBonusPerSource": 0.3,
+    "resonanceBonusCap": 0.9,
+    "redThreshold": 3.0,
+    "orangeThreshold": 2.0,
+    "grayMode": true,
+    "negativeSentimentFactor": 1.5,
+    "slowLanePerTick": 40,
+    "industryChannelPerTick": 30,
+    "triageBatchSize": 8,
+    "heatHistoryMin": 30,
+    "heatHistoryCap": 200,
+    "velocityGrowthRatio": 0.2,
+    "velocityGrowthAbsolute": 10,
+    "velocityBonus": 0.25,
+    "objectWindowChars": 14,
+    "stateRetentionDays": 14
+  },
+  "families": [
+    {
+      "id": "competitor_launch",
+      "name": "竞品发布",
+      "appliesTo": [
+        "competitor",
+        "industry_actor"
+      ],
+      "actions": [
+        "发布",
+        "上线",
+        "推出",
+        "开售",
+        "发售",
+        "开源",
+        "亮相",
+        "官宣"
+      ],
+      "objectWords": [
+        "产品",
+        "新品",
+        "版本",
+        "功能",
+        "服务",
+        "平台",
+        "客服",
+        "机器人",
+        "助手",
+        "模型",
+        "应用"
+      ],
+      "noticeWords": [
+        "公告",
+        "声明",
+        "回应",
+        "通知",
+        "通报",
+        "海报",
+        "预告",
+        "上手",
+        "评测",
+        "体验",
+        "盘点",
+        "汇总",
+        "一览",
+        "战报"
+      ],
+      "excludeWords": [
+        "招聘",
+        "诚聘",
+        "促销",
+        "抽奖",
+        "广告",
+        "优惠",
+        "打折",
+        "直播预告",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 2.0,
+      "weights": {
+        "competitor": 2.0,
+        "industry_actor": 1.5
+      },
+      "eventTypes": [
+        "PRODUCT_LAUNCH"
+      ]
+    },
+    {
+      "id": "self_launch",
+      "name": "我方发布",
+      "appliesTo": [
+        "self"
+      ],
+      "actions": [
+        "发布",
+        "上线",
+        "推出",
+        "开售",
+        "发售",
+        "首发",
+        "亮相",
+        "官宣",
+        "开卖"
+      ],
+      "objectWords": [
+        "产品",
+        "新品",
+        "版本",
+        "功能",
+        "服务",
+        "平台",
+        "应用"
+      ],
+      "noticeWords": [
+        "公告",
+        "声明",
+        "回应",
+        "通知",
+        "通报",
+        "海报",
+        "预告",
+        "上手",
+        "评测",
+        "体验",
+        "盘点",
+        "汇总",
+        "一览",
+        "战报"
+      ],
+      "excludeWords": [
+        "招聘",
+        "诚聘",
+        "促销",
+        "抽奖",
+        "广告",
+        "优惠",
+        "打折",
+        "直播预告",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 1.5,
+      "eventTypes": [
+        "PRODUCT_LAUNCH"
+      ]
+    },
+    {
+      "id": "product_change",
+      "name": "产品变更",
+      "appliesTo": [
+        "competitor",
+        "industry_actor"
+      ],
+      "actions": [
+        "升级",
+        "更新",
+        "下线",
+        "停服",
+        "更名",
+        "改名",
+        "合并",
+        "降价",
+        "涨价",
+        "调价",
+        "免费",
+        "开放"
+      ],
+      "objectWords": [
+        "产品",
+        "版本",
+        "功能",
+        "服务",
+        "价格",
+        "定价",
+        "API",
+        "接口",
+        "客服",
+        "机器人",
+        "助手"
+      ],
+      "noticeWords": [
+        "公告",
+        "声明",
+        "回应",
+        "传闻",
+        "上手",
+        "评测",
+        "体验",
+        "盘点",
+        "汇总",
+        "一览",
+        "战报"
+      ],
+      "excludeWords": [
+        "招聘",
+        "诚聘",
+        "促销",
+        "抽奖",
+        "广告",
+        "优惠",
+        "打折",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 2.0,
+      "weights": {
+        "competitor": 2.0,
+        "industry_actor": 1.5
+      },
+      "eventTypes": [
+        "PRODUCT_CHANGE"
+      ]
+    },
+    {
+      "id": "financing",
+      "name": "资本动作",
+      "appliesTo": [
+        "competitor",
+        "industry_actor"
+      ],
+      "actions": [
+        "融资",
+        "收购",
+        "并购",
+        "注资",
+        "投资",
+        "上市",
+        "完成轮"
+      ],
+      "objectWords": [
+        "轮",
+        "融资",
+        "股份",
+        "股权",
+        "亿美元",
+        "人民币",
+        "万元",
+        "亿",
+        "万",
+        "公司",
+        "估值"
+      ],
+      "noticeWords": [
+        "传闻",
+        "消息称",
+        "辟谣"
+      ],
+      "excludeWords": [
+        "招聘",
+        "促销",
+        "广告",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 1.8,
+      "eventTypes": [
+        "FINANCING"
+      ]
+    },
+    {
+      "id": "policy",
+      "name": "政策监管",
+      "appliesTo": [
+        "regulator"
+      ],
+      "actions": [
+        "发布",
+        "出台",
+        "征求意见",
+        "新规",
+        "立案",
+        "约谈",
+        "处罚",
+        "罚款",
+        "整治",
+        "审查"
+      ],
+      "objectWords": [
+        "规定",
+        "办法",
+        "意见",
+        "标准",
+        "规范",
+        "条例",
+        "方案",
+        "行业",
+        "企业"
+      ],
+      "noticeWords": [],
+      "excludeWords": [
+        "招聘",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 1.5,
+      "eventTypes": [
+        "POLICY"
+      ]
+    },
+    {
+      "id": "public_opinion",
+      "name": "舆情风险",
+      "appliesTo": [
+        "self",
+        "competitor"
+      ],
+      "actions": [
+        "宕机",
+        "故障",
+        "崩溃",
+        "泄露",
+        "泄漏",
+        "处罚",
+        "召回",
+        "投诉",
+        "维权",
+        "被曝",
+        "曝光",
+        "裁员",
+        "翻车",
+        "造假",
+        "罚款",
+        "争议"
+      ],
+      "objectWords": [],
+      "noticeWords": [],
+      "excludeWords": [
+        "促销",
+        "广告",
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 1.5,
+      "weights": {
+        "self": 3.0,
+        "competitor": 1.5
+      },
+      "eventTypes": [
+        "PUBLIC_OPINION"
+      ]
+    },
+    {
+      "id": "recruitment",
+      "name": "扩张信号",
+      "appliesTo": [
+        "competitor"
+      ],
+      "actions": [
+        "招聘",
+        "急聘",
+        "诚聘",
+        "组建团队",
+        "扩招",
+        "大规模招聘"
+      ],
+      "objectWords": [
+        "团队",
+        "工程师",
+        "研发",
+        "人员",
+        "岗位"
+      ],
+      "noticeWords": [],
+      "excludeWords": [
+        "大促",
+        "秒杀",
+        "满减",
+        "618",
+        "双11",
+        "优惠券"
+      ],
+      "weight": 1.2,
+      "eventTypes": [
+        "RECRUITMENT"
+      ]
+    }
+  ],
+  "negativeWords": [
+    "宕机",
+    "故障",
+    "崩溃",
+    "泄露",
+    "泄漏",
+    "处罚",
+    "召回",
+    "投诉",
+    "维权",
+    "裁员",
+    "翻车",
+    "造假",
+    "罚款",
+    "争议",
+    "被曝"
+  ],
+  "industryWords": [
+    "AI客服",
+    "智能客服",
+    "客服机器人",
+    "客服大模型",
+    "对话式AI",
+    "chatbot"
+  ],
+  "majorActionWords": [
+    "发布",
+    "融资",
+    "收购",
+    "并购",
+    "上市",
+    "宕机",
+    "泄露",
+    "处罚",
+    "召回",
+    "裁员",
+    "新规",
+    "立案"
+  ],
+  "sourceCredibility": {
+    "cctv_news": 1.2,
+    "south_weekend": 1.0,
+    "toutiao": 1.0,
+    "weibo": 0.8,
+    "douyin": 0.8,
+    "wechat": 0.8,
+    "sogou_wechat": 0.7
+  }
+}
